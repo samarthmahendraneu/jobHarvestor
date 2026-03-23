@@ -1,12 +1,13 @@
 # Job Harvestor 🍎
 
-A robust, cloud-native Producer-Consumer architecture for harvesting job listings into a PostgreSQL database, orchestrated via a Redis message queue.
+A robust, cloud-native Producer-Consumer architecture for harvesting job listings into a PostgreSQL database, orchestrated via a dynamic **Kafka / Redis Message Broker** interface and powered by **OpenAI**.
 
 ## 🏗️ Architecture Stack
-- **FastAPI Dashboard (`src/api.py`)**: A purely Vanilla HTML/JS frontend that connects to PostgreSQL to dynamically save, edit, and trigger CSS selectors for any given company.
-- **Producer (`src/producer.py`)**: A background worker that pulls a company's dynamic configuration, iterates through its job listing paginations using Pyppeteer (headless Chromium), and queues JSON payloads into Redis.
-- **Consumer (`src/consumer.py`)**: An endless loop that pops JSON payloads from the Redis queue, dynamically applies the CSS selectors attached to that specific payload, and extracts full details into PostgreSQL.
-- **Observability (`k8s/observability.yaml`)**: Built-in Prometheus (Metrics), Jaeger (Distributed Traces via OpenTelemetry), and Loki (Structured Logs).
+- **FastAPI Dashboard (`src/api.py`)**: A purely Vanilla HTML/JS frontend that connects to PostgreSQL to dynamically save, edit, and trigger CSS selectors for any given company. Includes an **Auto-Fill with AI 🪄** system (`src/llm_extractor.py`) using `gpt-4o` to automatically detect valid structured selectors from dynamically rendered Single Page Applications!
+- **MessageBroker (`src/broker/`)**: An enterprise abstract interface natively allowing hot-swapping between `RedisBroker` and Confluent's `KafkaBroker` to route workloads safely into ConsumerGroups.
+- **Producer (`src/producer.py`)**: A background worker that pulls a company's dynamic configuration, iterates through its job listing paginations using Pyppeteer (headless Chromium), and queues JSON payloads into the active broker.
+- **Consumer (`src/consumer.py`)**: An endless loop that pops JSON payloads from the active broker queue, dynamically applies the CSS selectors attached to that specific payload, and extracts full details into PostgreSQL.
+- **Observability (`jobharvestor-stack.yaml`)**: Built-in Prometheus (Metrics), Jaeger (Distributed Traces via OpenTelemetry), and Loki (Structured Logs).
 
 ---
 

@@ -16,6 +16,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 
+
+from src.stealth import prepare_stealth_page
+
 # --- OBSERVABILITY SETUP ---
 try:
     logging_loki.emitter.LokiEmitter.level_tag = "level"
@@ -113,7 +116,7 @@ async def scrape_job_details_on_page(page, payload: ScraperPayload):
 async def process_job_detail(payload, browser):
     page = None
     try:
-        page = await browser.newPage()
+        page = await prepare_stealth_page(browser)
         await scrape_job_details_on_page(page, payload)
     except Exception as e:
         logger.error(f"Error processing {payload.url}: {e}")

@@ -13,3 +13,5 @@ openai>=1.0.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 confluent-kafka>=2.3.0
+pyppeteer-stealth==2.7.4
+fake-useragent==1.5.1

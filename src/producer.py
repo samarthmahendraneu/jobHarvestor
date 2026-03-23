@@ -18,6 +18,8 @@ from opentelemetry.sdk.resources import Resource
 
 from src.broker import get_broker
 
+from src.stealth import prepare_stealth_page
+
 # --- OBSERVABILITY SETUP ---
 try:
     logging_loki.emitter.LokiEmitter.level_tag = "level"
@@ -154,6 +156,7 @@ async def scrape_jobs_on_page(page, payload: ScraperPayload, broker) -> List[Dic
             return []
 
 
+
 async def scrape_batch(payloads: List[ScraperPayload]) -> None:
     with tracer.start_as_current_span("scrape_batch") as span:
         span.set_attribute("batch_size", len(payloads))
@@ -165,14 +168,14 @@ async def scrape_batch(payloads: List[ScraperPayload]) -> None:
             browser = await launch(
                 headless=True,
                 executablePath=chrome_path,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',  '--disable-blink-features=AutomationControlled',]
             )
 
             results = []
 
             for payload in payloads:
                 await asyncio.sleep(random.uniform(1, 3))
-                page = await browser.newPage()
+                page = await prepare_stealth_page(browser)
                 page.setDefaultNavigationTimeout(90000)
 
                 logger.info(f"Fetching {payload.url} ...")

@@ -1,13 +1,14 @@
 # connect to redis server
 import redis
 
-r = redis.Redis(host='localhost', port=6379, db=0)
+import os
+r = redis.Redis(host=os.getenv('REDIS_HOST', 'localhost'), port=6379, db=0)
 
 
 class Redis:
 
     def __init__(self):
-        self.r = redis.Redis(host='localhost', port=6379, db=0)
+        self.r = redis.Redis(host=os.getenv('REDIS_HOST', 'localhost'), port=6379, db=0)
 
 
     def test_connection(self):

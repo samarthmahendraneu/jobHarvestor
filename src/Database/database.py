@@ -14,7 +14,7 @@ class Database:
         # database - Jobstats
         # password - os.getenv('DB_PASSWORD')
         self.connection = connect(
-            host='localhost',
+            host=os.getenv('DB_HOST', 'localhost'),
             port=5432,
             user='postgres',
             password=os.getenv('DB_PASSWORD'),

@@ -111,12 +111,14 @@ async def scrape_batch(payloads: List[ScraperPayload]) -> None:
     Scrape a batch of payloads using a single browser instance.
     """
     redis_client = Redis()
+    import os
     browser = None
     try:
         print("Initializing headless browser using system Google Chrome...")
+        chrome_path = os.getenv('CHROME_PATH', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
         browser = await launch(
             headless=True,
-            executablePath='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            executablePath=chrome_path,
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         )
 

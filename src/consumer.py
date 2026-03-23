@@ -101,11 +101,13 @@ async def scrape_batch(payloads):
     """
     Scrapes a batch of jobs using a single browser instance for all payloads.
     """
+    import os
     browser = None
     try:
+        chrome_path = os.getenv('CHROME_PATH', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
         browser = await launch(
             headless=True,
-            executablePath='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            executablePath=chrome_path,
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         )
 

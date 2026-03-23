@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer
+  labels:
+    app: consumer
+spec:
+  replicas: 3 # Scaling consumers to process jobs faster
+  selector:
+    matchLabels:
+      app: consumer
+  template:
+    metadata:
+      labels:
+        app: consumer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+    spec:
+      containers:
+      - name: consumer
+        image: jobharvestor-consumer:latest
+        imagePullPolicy: Never # Crucial for Minikube using local docker images
+        env:
+        - name: DB_HOST
+          value: "postgres"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: DB_PASSWORD
+          value: "your_postgres_password"
+        - name: LOKI_URL
+          value: "http://loki:3100/loki/api/v1/push"
+        - name: OTLP_ENDPOINT
+          value: "http://jaeger:4318/v1/traces"
+        ports:
+        - containerPort: 8001

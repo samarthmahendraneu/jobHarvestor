@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Harvestor Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --primary: #3b82f6;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+        }
+        body {
+            margin: 0; padding: 0; background: var(--bg); color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+        }
+        .header {
+            padding: 20px 40px; border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .container {
+            padding: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px;
+        }
+        @media (max-width: 1000px) {
+            .container { grid-template-columns: 1fr; }
+        }
+        .surface-box {
+            background: var(--surface); padding: 30px; border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        input {
+            width: 100%; padding: 12px; margin: 8px 0 20px 0; border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3);
+            color: white; box-sizing: border-box; font-family: 'Inter', sans-serif;
+        }
+        label { font-size: 14px; font-weight: 600; color: var(--text-sub); }
+        button {
+            background: var(--primary); color: white; padding: 12px 24px; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 16px;
+            transition: all 0.2s;
+        }
+        button:hover { filter: brightness(1.2); }
+        button.run-btn { background: #10b981; margin-top: 15px;}
+        
+        .company-card {
+            background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
+            padding: 20px; border-radius: 8px; margin-bottom: 20px;
+        }
+        .company-card h3 { margin-top: 0; color: #38bdf8; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h2>🍎 Job Harvestor Dashboard</h2>
+</div>
+
+<div class="container">
+    <div class="surface-box">
+        <h2>Add New Company Config</h2>
+        <form id="configForm">
+            <label>Company Name</label>
+            <input type="text" id="company_name" required>
+            
+            <label>Base Listings URL</label>
+            <input type="url" id="base_url" placeholder="https://jobs.example.com/search?page=" required>
+
+            <h4 style="color:var(--text-sub); border-bottom:1px solid #333; padding-bottom:5px;">Listings Page Selectors</h4>
+            <label>Job List Item Wrapper</label>
+            <input type="text" id="job_list_selector" placeholder=".job-row">
+            <label>Title Element (relative to Wrapper)</label>
+            <input type="text" id="title_selector" placeholder="h3 a">
+            <label>Link Element (relative to Wrapper)</label>
+            <input type="text" id="link_selector" placeholder="h3 a">
+
+            <h4 style="color:var(--text-sub); border-bottom:1px solid #333; padding-bottom:5px;">Details Page Selectors</h4>
+            <label>Job ID</label>
+            <input type="text" id="job_id_selector">
+            <label>Job Title</label>
+            <input type="text" id="job_title_selector">
+            <label>Location</label>
+            <input type="text" id="location_selector">
+            <label>Department</label>
+            <input type="text" id="department_selector">
+            <label>Summary text</label>
+            <input type="text" id="summary_selector">
+            <label>Long Description text</label>
+            <input type="text" id="long_description_selector">
+            <label>Posted Date</label>
+            <input type="text" id="date_selector">
+
+            <button type="submit">Save Configuration</button>
+        </form>
+    </div>
+
+    <div class="surface-box">
+        <h2>Configured Companies</h2>
+        <div id="companyList">
+            <!-- Rendered by JS -->
+        </div>
+    </div>
+</div>
+
+<script>
+    async function loadCompanies() {
+        const res = await fetch('/api/companies');
+        const companies = await res.json();
+        const list = document.getElementById('companyList');
+        list.innerHTML = '';
+        companies.forEach(company => {
+            const card = document.createElement('div');
+            card.className = 'company-card';
+            card.innerHTML = `
+                <h3>${company.company_name}</h3>
+                <p style="font-size:14px; color:var(--text-sub); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    ${company.base_url}
+                </p>
+                <div style="font-size:12px; color:#64748b; margin-top:10px;">
+                    List Wrapper format: ${company.job_list_selector}
+                </div>
+                <button class="run-btn" onclick="runHarvest(${company.id})">🚀 Run Harvest</button>
+            `;
+            list.appendChild(card);
+        });
+    }
+
+    async function runHarvest(id) {
+        const btn = event.target;
+        btn.innerText = "Triggering...";
+        const res = await fetch('/api/harvest/' + id, {method: 'POST'});
+        const data = await res.json();
+        alert(data.message);
+        btn.innerText = "🚀 Run Harvest";
+    }
+
+    document.getElementById('configForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+            company_name: document.getElementById('company_name').value,
+            base_url: document.getElementById('base_url').value,
+            job_list_selector: document.getElementById('job_list_selector').value,
+            title_selector: document.getElementById('title_selector').value,
+            link_selector: document.getElementById('link_selector').value,
+            job_id_selector: document.getElementById('job_id_selector').value,
+            job_title_selector: document.getElementById('job_title_selector').value,
+            location_selector: document.getElementById('location_selector').value,
+            department_selector: document.getElementById('department_selector').value,
+            summary_selector: document.getElementById('summary_selector').value,
+            long_description_selector: document.getElementById('long_description_selector').value,
+            date_selector: document.getElementById('date_selector').value
+        };
+
+        await fetch('/api/companies', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        
+        e.target.reset();
+        await loadCompanies();
+    });
+
+    // Init
+    loadCompanies();
+</script>
+
+</body>
+</html>

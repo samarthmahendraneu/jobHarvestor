@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: producer
+  labels:
+    app: producer
+spec:
+  replicas: 1 # Producer doesn't need to scale highly right now due to Pyppeteer state, but can be scaled if queue logic is refactored
+  selector:
+    matchLabels:
+      app: producer
+  template:
+    metadata:
+      labels:
+        app: producer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      containers:
+      - name: producer
+        image: jobharvestor-producer:latest
+        imagePullPolicy: Never # Crucial for Minikube using local docker images
+        env:
+        - name: REDIS_HOST
+          value: "redis"
+        - name: LOKI_URL
+          value: "http://loki:3100/loki/api/v1/push"
+        - name: OTLP_ENDPOINT
+          value: "http://jaeger:4318/v1/traces"
+        ports:
+        - containerPort: 8000

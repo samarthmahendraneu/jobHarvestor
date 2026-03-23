@@ -17,7 +17,7 @@ class Database:
             host=os.getenv('DB_HOST', 'localhost'),
             port=5432,
             user='postgres',
-            password=os.getenv('DB_PASSWORD'),
+            password=os.getenv('DB_PASSWORD', ''),
             database='postgres')
         self.cursor = self.connection.cursor(cursor_factory=DictCursor)
 
@@ -90,10 +90,51 @@ class Database:
         print("Table created successfully")
 
 
+    def create_table_companies_config(self):
+        query = """
+        CREATE TABLE IF NOT EXISTS companies_config (
+            id SERIAL PRIMARY KEY,
+            company_name VARCHAR(255) UNIQUE NOT NULL,
+            base_url VARCHAR(1024) NOT NULL,
+            job_list_selector TEXT,
+            title_selector TEXT,
+            link_selector TEXT,
+            job_id_selector TEXT,
+            job_title_selector TEXT,
+            location_selector TEXT,
+            department_selector TEXT,
+            summary_selector TEXT,
+            long_description_selector TEXT,
+            date_selector TEXT
+        );
+        """
+        self.cursor.execute(query)
+        self.connection.commit()
+        
+        seed_query = """
+        INSERT INTO companies_config (
+            company_name, base_url, job_list_selector, title_selector, link_selector,
+            job_id_selector, job_title_selector, location_selector, department_selector,
+            summary_selector, long_description_selector, date_selector
+        ) VALUES (
+            'Apple', 
+            'https://jobs.apple.com/en-us/search?location=united-states-USA&page', 
+            'div.job-list-item', 'h3 a', 'h3 a',
+            '#jobdetails-jobnumber', '#jobdetails-postingtitle', '#jobdetails-joblocation', 
+            '#jobdetails-teamname', '#jobdetails-jobdetails-jobsummary-content-row > span', 
+            '#jobdetails-jobdetails-jobdescription-content-row > span', '#jobdetails-jobpostdate'
+        ) ON CONFLICT (company_name) DO NOTHING;
+        """
+        self.cursor.execute(seed_query)
+        self.connection.commit()
+        
+        print("Table companies_config created successfully")
+
 # testing the connection
 ob = Database()
 ob.test_connection()
 
-# # creating table
+# # creating tables
 ob.create_table_job_details()
+ob.create_table_companies_config()
 

@@ -1,66 +1,93 @@
-# Job Harvestor 🍎
+# Job Harvestor
 
-A robust, cloud-native Producer-Consumer architecture for harvesting job listings into a PostgreSQL database, orchestrated via a dynamic **Kafka / Redis Message Broker** interface and powered by **OpenAI**.
+A web scraping pipeline for extracting job listings from company career pages and storing them in a PostgreSQL database. It uses a Producer-Consumer architecture backed by a message broker (Kafka or Redis).
 
-## 🏗️ Architecture Stack
-- **FastAPI Dashboard (`src/api.py`)**: A purely Vanilla HTML/JS frontend that connects to PostgreSQL to dynamically save, edit, and trigger CSS selectors for any given company. Includes an **Auto-Fill with AI 🪄** system (`src/llm_extractor.py`) using `gpt-4o` to automatically detect valid structured selectors from dynamically rendered Single Page Applications!
-- **MessageBroker (`src/broker/`)**: An enterprise abstract interface natively allowing hot-swapping between `RedisBroker` and Confluent's `KafkaBroker` to route workloads safely into ConsumerGroups.
-- **Producer (`src/producer.py`)**: A background worker that pulls a company's dynamic configuration, iterates through its job listing paginations using Pyppeteer (headless Chromium), and queues JSON payloads into the active broker.
-- **Consumer (`src/consumer.py`)**: An endless loop that pops JSON payloads from the active broker queue, dynamically applies the CSS selectors attached to that specific payload, and extracts full details into PostgreSQL.
-- **Observability (`jobharvestor-stack.yaml`)**: Built-in Prometheus (Metrics), Jaeger (Distributed Traces via OpenTelemetry), and Loki (Structured Logs).
+## Architecture Stack
+- **FastAPI Dashboard (`src/api.py`)**: A web interface to manage target companies, CSS selectors, and trigger scraping jobs. Includes a `gpt-4o` extractor (`src/llm_extractor.py`) to auto-fill CSS selectors from external URLs.
+- **MessageBroker (`src/broker/`)**: An interface that allows the system to use either Redis or Kafka for message queuing depending on the `BROKER_TYPE` environment variable.
+- **Producer (`src/producer.py`)**: A worker that paginates through job listings using headless Chrome (Pyppeteer) and queues the job URLs into the message broker.
+- **Consumer (`src/consumer.py`)**: A continuous background worker that reads URLs from the message broker, navigates to the job page, extracts details using the provided CSS selectors, and saves the data to PostgreSQL.
+- **Observability**: Metrics via Prometheus, distributed tracing via Jaeger, and structured logs via Loki.
 
 ---
 
-## 🚀 Kubernetes Deployment (Minikube)
+## Local Setup (Minikube)
 
-We have fully dockerized this architecture. The easiest way to run the entire system is through Kubernetes (Minikube).
+The project is fully dockerized and orchestrated using Kubernetes.
 
-### 1. Start Minikube & Docker
+### 1. Requirements
+- Docker
+- Minikube
+- `kubectl`
+
+### 2. Start Minikube
+Allocate enough memory (at least 4GB) to support the Kafka and Zookeeper nodes:
 ```bash
-minikube start
+minikube start --memory=4096 --cpus=4
+```
+
+Point your local Docker daemon to use Minikube's internal registry (required since `imagePullPolicy` is set to `Never` for local development):
+```bash
 eval $(minikube docker-env)
 ```
-*(This ensures your local Docker layers are built directly into Minikube's internal registry.)*
 
-### 2. Build the Docker Images
+### 3. Build the Docker Images
+Build the producer and consumer images locally:
 ```bash
 docker build -t jobharvestor-api:latest -f Dockerfile.producer .
 docker build -t jobharvestor-consumer:latest -f Dockerfile.consumer .
 ```
 
-### 3. Deploy the Stack
-Deploy the databases, consumer, API, and all observability tools instantly using the unified deployment manifest:
+### 4. Deploy to Kubernetes
+Apply the stack manifest to spin up all services (PostgreSQL, Redis, Kafka, Zookeeper, Observability tools, and the application):
 ```bash
 kubectl apply -f jobharvestor-stack.yaml
 ```
-Wait a few seconds for the pods to boot up (`kubectl get pods`). Because the Python scripts contain an initialization routine, the PostgreSQL tables and default "Apple" configuration will automatically seed on boot.
+You can check the pod status with `kubectl get pods`.
 
-### 4. Access the Web Dashboard
-Since Kubernetes isolates the network, you must open the API Dashboard using the Minikube tunnel:
+### 5. Access the Web Dashboard
+Use `minikube service` to open the GUI in your browser:
 ```bash
 minikube service api-dashboard
 ```
-Check out the UI, add new companies, and click **🚀 Run Harvest** to trigger the Producer scraping!
+
+### 6. Access the Database
+If you need to connect to the PostgreSQL database directly using a SQL client (e.g., DBeaver, pgAdmin), you can port-forward the database service:
+```bash
+kubectl port-forward service/postgres 5432:5432
+```
+**Connection Details:**
+- Host: `localhost`
+- Port: `5432`
+- User: `postgres`
+- Password: `your_postgres_password`
+- Database: `postgres`
 
 ---
 
-## 🔎 Observability & Monitoring
+## Observability
 
-The architecture automatically emits advanced telemetry on ports `8000` and `8001`. You can visualize your scraping rate, errors, and spans!
+Telemetry is exposed on ports `8000` (Producer) and `8001` (Consumer).
 
-**To open the Metrics Graph (Prometheus):**
+**Metrics (Prometheus):**
 ```bash
 minikube service prometheus
 ```
-*(Search for `consumer_jobs_inserted_total`)*
+*(Search for the metric `consumer_jobs_inserted_total`)*
 
-**To view the Distributed Traces (Jaeger):**
+**Tracing (Jaeger):**
 ```bash
 minikube service jaeger
 ```
-*(Select `jobharvestor-consumer` and click "Find Traces")*
+*(Select `jobharvestor-consumer` and find traces)*
 
-**To watch the logs live:**
+**Logs (Loki):**
+```bash
+minikube service loki
+```
+*(Note: The API Dashboard fetches logs directly from Loki's HTTP API for the Live Terminal UI feature)*
+
+**Raw Container Logs:**
 ```bash
 kubectl logs -l app=api-dashboard -f
 kubectl logs -l app=consumer -f
@@ -68,13 +95,13 @@ kubectl logs -l app=consumer -f
 
 ---
 
-## 🛑 Stopping the Cluster
-To spin all the microservices down:
+## Stopping the Cluster
+To spin down the microservices, delete the manifest:
 ```bash
 kubectl delete -f jobharvestor-stack.yaml
 ```
-To shut down your Minikube virtual machine:
+
+To stop Minikube:
 ```bash
 minikube stop
 ```
-*(If you run into persistent `connection refused` errors when booting Minikube on macOS later, use `minikube delete` to wipe the corrupted profile and start fresh).*

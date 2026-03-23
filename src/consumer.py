@@ -154,35 +154,40 @@ async def main():
     from src.broker import get_broker
     broker = get_broker()
 
-    messages = broker.consume("jobs", batch_size=3)
-    
-    if not messages:
-        # Silently return if no jobs are in the Kafka queue to prevent log spam
-        return
+    logger.info("Connecting to core queue streaming engine... Subscribing to telemetry topics...")
 
-    logger.info(f"Pulled {len(messages)} jobs from message broker.")
-
-    jobs = []
-    for item in messages:
+    # Infinite daemon event loop running natively inside the async cluster
+    while True:
         try:
-            data = json.loads(item)
-            jobs.append(ScraperPayload(**data))
-        except json.JSONDecodeError:
-            logger.warning(f"Found non-JSON URL in queue: {item}")
-            pass
+            messages = broker.consume("jobs", batch_size=3)
+            
+            if not messages:
+                await asyncio.sleep(5)
+                continue
 
-    if jobs:
-        logger.info(f"Scraping active Kafka/Redis micro-batch of {len(jobs)} items.")
-        await scrape_batch(jobs)
+            logger.info(f"Pulled {len(messages)} jobs from message broker.")
+
+            jobs = []
+            for item in messages:
+                try:
+                    data = json.loads(item)
+                    jobs.append(ScraperPayload(**data))
+                except json.JSONDecodeError:
+                    logger.warning(f"Found non-JSON URL in queue: {item}")
+                    pass
+
+            if jobs:
+                logger.info(f"Scraping active queue micro-batch of {len(jobs)} items.")
+                await scrape_batch(jobs)
+
+            await asyncio.sleep(2)
+        except Exception as e:
+            logger.error(f"Consumer loop iteration crashed: {e}")
+            await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
-    while True:
-        try:
-            asyncio.run(main())
-            import time
-            time.sleep(10) # Loop forever acting as a true daemon consumer
-        except Exception as e:
-            logger.error(f"Consumer loop crashed: {e}")
-            import time
-            time.sleep(10)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Termination signal received. Shutting down Consumer.")

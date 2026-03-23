@@ -114,7 +114,7 @@ async def get_logs():
     import json
     try:
         # Query Loki for the last 50 logs of our app
-        query = '{application="jobharvestor-consumer"}'
+        query = '{application=~"jobharvestor-consumer|jobharvestor-producer"}'
         url = f'http://loki:3100/loki/api/v1/query_range?query={urllib.parse.quote(query)}&limit=50'
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req) as response:

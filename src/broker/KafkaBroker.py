@@ -18,24 +18,23 @@ class KafkaBroker(MessageBroker):
             'enable.auto.commit': True
         }
         
-    def _get_producer(self):
-        return Producer(self.producer_conf)
-        
-    def _get_consumer(self):
-        return Consumer(self.consumer_conf)
+        # Maintain persistent native TCP streams for extremely high throughput
+        self._producer = Producer(self.producer_conf)
+        self._consumer = Consumer(self.consumer_conf)
+        self._subscribed = set()
 
     def produce(self, topic: str, message: str) -> None:
-        p = self._get_producer()
-        p.produce(topic, message.encode('utf-8'))
-        p.flush()
+        self._producer.produce(topic, message.encode('utf-8'))
+        self._producer.flush()
 
     def consume(self, topic: str, batch_size: int) -> list[str]:
-        c = self._get_consumer()
-        c.subscribe([topic])
+        if topic not in self._subscribed:
+            self._consumer.subscribe([topic])
+            self._subscribed.add(topic)
         
         messages = []
         # Consume exactly a maximum batch so we don't hold thousands of items in RAM safely distributing load
-        msgs = c.consume(num_messages=batch_size, timeout=1.0)
+        msgs = self._consumer.consume(num_messages=batch_size, timeout=3.0)
         
         for msg in msgs:
             if msg.error():
@@ -44,5 +43,4 @@ class KafkaBroker(MessageBroker):
                 continue
             messages.append(msg.value().decode('utf-8'))
             
-        c.close()
         return messages

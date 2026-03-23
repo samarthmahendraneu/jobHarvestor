@@ -151,31 +151,29 @@ async def main():
     except Exception:
         pass # Already running
 
-    from src.cache.Redis import Redis
-    cache = Redis()
+    from src.broker import get_broker
+    broker = get_broker()
 
-    queue = set(cache.get_list('jobs'))
-    logger.info(f"Found {len(queue)} job URLs to scrape.")
+    messages = broker.consume("jobs", batch_size=3)
+    
+    if not messages:
+        # Silently return if no jobs are in the Kafka queue to prevent log spam
+        return
 
-    # Parse JSON payloads
+    logger.info(f"Pulled {len(messages)} jobs from message broker.")
+
     jobs = []
-    for item in queue:
+    for item in messages:
         try:
             data = json.loads(item)
             jobs.append(ScraperPayload(**data))
         except json.JSONDecodeError:
-            # If there are lingering old string-only items in Redis from earlier tests
             logger.warning(f"Found non-JSON URL in queue: {item}")
             pass
 
-    batch_size = 3
-    for i in range(0, len(jobs), batch_size):
-        batch = jobs[i : i + batch_size]
-        logger.info(f"Scraping batch {i // batch_size + 1} with {len(batch)} items.")
-        await scrape_batch(batch)
-        await asyncio.sleep(10)
-
-    logger.info("All done processing existing URLs!")
+    if jobs:
+        logger.info(f"Scraping active Kafka/Redis micro-batch of {len(jobs)} items.")
+        await scrape_batch(jobs)
 
 
 if __name__ == "__main__":

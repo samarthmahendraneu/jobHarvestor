@@ -16,7 +16,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 
-from src.cache.Redis import Redis
+from src.broker import get_broker
 
 # --- OBSERVABILITY SETUP ---
 try:
@@ -102,7 +102,7 @@ async def get_link_href(parent_element, selector: str, page, base_url: str) -> s
     return ""
 
 
-async def scrape_jobs_on_page(page, payload: ScraperPayload, redis_client) -> List[Dict[str, str]]:
+async def scrape_jobs_on_page(page, payload: ScraperPayload, broker) -> List[Dict[str, str]]:
     with tracer.start_as_current_span("scrape_jobs_on_page") as span:
         span.set_attribute("payload.url", payload.url)
         try:
@@ -136,8 +136,8 @@ async def scrape_jobs_on_page(page, payload: ScraperPayload, redis_client) -> Li
                             "date": payload.raw_config.get("date_selector")
                         }
                         
-                        redis_client.append_to_list("jobs", json.dumps(consumer_payload))
-                        logger.info(f"[PRODUCER -> REDIS] {json.dumps(consumer_payload)}")
+                        broker.produce("jobs", json.dumps(consumer_payload))
+                        logger.info(f"[PRODUCER -> BROKER] {json.dumps(consumer_payload)}")
                         JOBS_QUEUED.inc()
 
                 except Exception as e:
@@ -157,7 +157,7 @@ async def scrape_jobs_on_page(page, payload: ScraperPayload, redis_client) -> Li
 async def scrape_batch(payloads: List[ScraperPayload]) -> None:
     with tracer.start_as_current_span("scrape_batch") as span:
         span.set_attribute("batch_size", len(payloads))
-        redis_client = Redis()
+        broker = get_broker()
         browser = None
         try:
             logger.info("Initializing headless browser utilizing system Chrome...")
@@ -176,7 +176,7 @@ async def scrape_batch(payloads: List[ScraperPayload]) -> None:
                 page.setDefaultNavigationTimeout(90000)
 
                 logger.info(f"Fetching {payload.url} ...")
-                jobs = await scrape_jobs_on_page(page, payload, redis_client)
+                jobs = await scrape_jobs_on_page(page, payload, broker)
                 logger.info(f"Found {len(jobs)} jobs on {payload.url}.")
                 results.append((payload.url, jobs))
 

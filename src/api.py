@@ -91,6 +91,22 @@ async def run_harvest(company_id: int):
     asyncio.create_task(start_harvest_for_company(config))
     return {"status": "started", "message": f"Harvest started in background for {config['company_name']}"}
 
+class SelectorRequest(BaseModel):
+    url: str
+
+@app.post("/api/generate-selectors")
+async def generate_selectors(req: SelectorRequest):
+    try:
+        from src.llm_extractor import extract_css_selectors
+        import os
+        if not os.getenv("OPENAI_API_KEY"):
+            return {"error": "OPENAI_API_KEY is missing. Export it to your environment."}
+        
+        selectors = await extract_css_selectors(req.url)
+        return {"status": "success", "selectors": selectors}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/logs")
 async def get_logs():
     import urllib.request

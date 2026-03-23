@@ -112,6 +112,11 @@
     
     <div class="surface-box">
         <h2>Add New Company Config</h2>
+        <div style="display:flex; gap:10px; margin-bottom:20px;">
+            <input type="url" id="auto_url" placeholder="Paste URL here to auto-extract CSS with AI..." style="margin:0;">
+            <button type="button" id="autoBtn" style="background:#a855f7; padding:0 20px; white-space:nowrap;" onclick="autoFillSelectors()">🪄 Auto-Fill</button>
+        </div>
+        
         <form id="configForm">
             <label>Company Name</label>
             <input type="text" id="company_name" required>
@@ -210,6 +215,47 @@
         e.target.reset();
         await loadCompanies();
     });
+
+    async function autoFillSelectors() {
+        const url = document.getElementById('auto_url').value;
+        if (!url) return alert("Enter a valid Base Listings URL first!");
+        
+        const btn = document.getElementById('autoBtn');
+        btn.innerText = "🔮 Thinking...";
+        btn.disabled = true;
+        
+        try {
+            const res = await fetch('/api/generate-selectors', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url})
+            });
+            const data = await res.json();
+            
+            if (data.error) {
+                alert("AI Extraction Failed: " + data.error);
+            } else {
+                const sel = data.selectors;
+                document.getElementById('base_url').value = url;
+                document.getElementById('job_list_selector').value = sel.job_list_selector || '';
+                document.getElementById('title_selector').value = sel.title_selector || '';
+                document.getElementById('link_selector').value = sel.link_selector || '';
+                document.getElementById('job_id_selector').value = sel.job_id_selector || '';
+                document.getElementById('job_title_selector').value = sel.job_title_selector || '';
+                document.getElementById('location_selector').value = sel.location_selector || '';
+                document.getElementById('department_selector').value = sel.department_selector || '';
+                document.getElementById('summary_selector').value = sel.summary_selector || '';
+                document.getElementById('long_description_selector').value = sel.long_description_selector || '';
+                document.getElementById('date_selector').value = sel.date_selector || '';
+                alert("Success! Review the generated selectors below, name your company, and click Save.");
+            }
+        } catch(e) {
+            alert("Network Error: " + e.message);
+        }
+        
+        btn.innerText = "🪄 Auto-Fill";
+        btn.disabled = false;
+    }
 
     // Telemetry Polling Loop
     setInterval(async () => {

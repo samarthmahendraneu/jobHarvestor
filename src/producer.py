@@ -59,6 +59,8 @@ class ScraperPayload:
     raw_config: dict
 
 
+from urllib.parse import urljoin
+
 async def get_inner_text(parent_element, selector: str, page) -> str:
     try:
         element = await parent_element.querySelector(selector)
@@ -70,12 +72,31 @@ async def get_inner_text(parent_element, selector: str, page) -> str:
     return ""
 
 
-async def get_link_href(parent_element, selector: str, page) -> str:
+async def get_link_href(parent_element, selector: str, page, base_url: str) -> str:
     try:
-        link_el = await parent_element.querySelector(selector)
-        if link_el:
-            href = await page.evaluate("el => el.href", link_el)
-            return href.strip() if href else ""
+        href = await page.evaluate(f'''(el) => {{
+            // Custom CSS selector search first
+            if ("{selector}") {{
+                const child = el.querySelector("{selector}");
+                if (child && (child.getAttribute('href') || child.href)) {{
+                    return child.getAttribute('href') || child.href;
+                }}
+            }}
+            
+            // Fallback: If the wrapper itself is the anchor tag
+            if (el.tagName.toLowerCase() === 'a') {{
+                return el.getAttribute('href') || el.href;
+            }}
+            
+            // Ultimate fallback: find ANY anchor tag inside the wrapper
+            const anyChild = el.querySelector("a");
+            if (anyChild) return anyChild.getAttribute('href') || anyChild.href;
+            
+            return "";
+        }}''', parent_element)
+
+        if href:
+            return urljoin(base_url, href.strip())
     except Exception as e:
         logger.error(f"Failed to get href for selector '{selector}': {e}")
     return ""
@@ -97,9 +118,10 @@ async def scrape_jobs_on_page(page, payload: ScraperPayload, redis_client) -> Li
             for job_el in job_list_elements:
                 try:
                     title = await get_inner_text(job_el, payload.title_selector, page)
-                    link = await get_link_href(job_el, payload.link_selector, page)
+                    link = await get_link_href(job_el, payload.link_selector, page, payload.url)
 
-                    if title or link:
+                    # STRICT ENFORCEMENT: Without a hard link to navigate to, the consumer will completely crash.
+                    if link:
                         jobs.append({"title": title, "link": link})
                         
                         # Package the URL and the Consumer Selectors together
@@ -115,6 +137,7 @@ async def scrape_jobs_on_page(page, payload: ScraperPayload, redis_client) -> Li
                         }
                         
                         redis_client.append_to_list("jobs", json.dumps(consumer_payload))
+                        logger.info(f"[PRODUCER -> REDIS] {json.dumps(consumer_payload)}")
                         JOBS_QUEUED.inc()
 
                 except Exception as e:

@@ -76,8 +76,11 @@ async def scrape_job_details_on_page(page, payload: ScraperPayload):
         span.set_attribute("payload.url", payload.url)
         try:
             await asyncio.sleep(random.uniform(1, 3))
-            await page.goto(payload.url, waitUntil='networkidle0', timeout=90000)
-
+            await page.goto(payload.url, {'waitUntil': 'networkidle0', 'timeout': 90000})
+            
+            # Massive stabilization wait: SPAs take heavy milliseconds to mount elements!
+            await asyncio.sleep(3.5)
+            
             job_id = await get_inner_text(page, payload.job_id)
             title = await get_inner_text(page, payload.title)
             location = await get_inner_text(page, payload.location)
@@ -94,6 +97,8 @@ async def scrape_job_details_on_page(page, payload: ScraperPayload):
                 ON CONFLICT (job_id) DO NOTHING
             """
             params = (job_id, title, location, department, summary, long_desc, date_val, payload.url)
+            
+            logger.info(f"[CONSUMER -> POSTGRES] Insert: ID={job_id} | Title='{title}' | Loc='{location}' | Dept='{department}' | Date='{date_val}'")
             db.insert_query(query, params)
             
             JOBS_INSERTED.inc()

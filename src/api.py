@@ -15,6 +15,12 @@ from src.producer import start_harvest_for_company
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Setup the tables on startup and close on shutdown if necessary
+    from prometheus_client import start_http_server
+    try:
+        start_http_server(8000)
+    except Exception:
+        pass # Already started
+    
     db = Database()
     db.create_table_job_details()
     db.create_table_companies_config()
@@ -84,6 +90,51 @@ async def run_harvest(company_id: int):
     # Trigger the background task without blocking the API
     asyncio.create_task(start_harvest_for_company(config))
     return {"status": "started", "message": f"Harvest started in background for {config['company_name']}"}
+
+@app.get("/api/logs")
+async def get_logs():
+    import urllib.request
+    import urllib.parse
+    import json
+    try:
+        # Query Loki for the last 50 logs of our app
+        query = '{application="jobharvestor-consumer"}'
+        url = f'http://loki:3100/loki/api/v1/query_range?query={urllib.parse.quote(query)}&limit=50'
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            lines = []
+            for stream in data.get('data', {}).get('result', []):
+                for val in stream.get('values', []):
+                    lines.append(val[1])
+            # Return reversed so newest is on top
+            return {"logs": lines[::-1][:50]}
+    except Exception as e:
+        return {"logs": [f"Waiting for logs... (or Loki not reachable: {e})"]}
+
+@app.get("/api/stats")
+async def get_stats():
+    from src.cache.Redis import Redis
+    import urllib.request
+    import json
+    cache = Redis()
+    r = cache.r
+    queue_len = r.llen("jobs")
+    
+    # Query Jaeger for recent traces to show scraping speeds
+    traces = []
+    try:
+        url = "http://jaeger:16686/api/traces?service=jobharvestor-consumer&limit=5"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=2) as response:
+            data = json.loads(response.read().decode())
+            for t in data.get("data", []):
+                dur = max([span.get("duration", 0) for span in t.get("spans", [{'duration':0}])]) / 1000.0
+                traces.append({"trace_id": t["traceID"], "latency_ms": dur, "process": "Consumer"})
+    except Exception:
+        pass
+
+    return {"queue_length": queue_len, "recent_traces": traces}
 
 if __name__ == "__main__":
     uvicorn.run("src.api:app", host="0.0.0.0", port=8080, reload=True)

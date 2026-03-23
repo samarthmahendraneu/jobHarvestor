@@ -81,8 +81,8 @@ spec:
         - name: COLLECTOR_OTLP_ENABLED
           value: "true"
         ports:
-        - containerPort: 16686 # UI
-        - containerPort: 4318  # OTLP HTTP
+        - containerPort: 16686
+        - containerPort: 4318
 ---
 apiVersion: v1
 kind: Service

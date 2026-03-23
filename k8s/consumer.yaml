@@ -5,7 +5,7 @@ metadata:
   labels:
     app: consumer
 spec:
-  replicas: 3 # Scaling consumers to process jobs faster
+  replicas: 3
   selector:
     matchLabels:
       app: consumer
@@ -20,7 +20,7 @@ spec:
       containers:
       - name: consumer
         image: jobharvestor-consumer:latest
-        imagePullPolicy: Never # Crucial for Minikube using local docker images
+        imagePullPolicy: Never
         env:
         - name: DB_HOST
           value: "postgres"

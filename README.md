@@ -28,9 +28,9 @@ docker build -t jobharvestor-consumer:latest -f Dockerfile.consumer .
 ```
 
 ### 3. Deploy the Stack
-Deploy the databases, consumer, API, and all observability tools instantly:
+Deploy the databases, consumer, API, and all observability tools instantly using the unified deployment manifest:
 ```bash
-kubectl apply -f k8s/
+kubectl apply -f jobharvestor-stack.yaml
 ```
 Wait a few seconds for the pods to boot up (`kubectl get pods`). Because the Python scripts contain an initialization routine, the PostgreSQL tables and default "Apple" configuration will automatically seed on boot.
 
@@ -68,9 +68,9 @@ kubectl logs -l app=consumer -f
 ---
 
 ## 🛑 Stopping the Cluster
-To delete the deployment and spin everything down:
+To spin all the microservices down:
 ```bash
-kubectl delete -f k8s/
+kubectl delete -f jobharvestor-stack.yaml
 ```
 To shut down your Minikube virtual machine:
 ```bash

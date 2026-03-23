@@ -50,6 +50,21 @@
             padding: 20px; border-radius: 8px; margin-bottom: 20px;
         }
         .company-card h3 { margin-top: 0; color: #38bdf8; }
+
+        .terminal {
+            background: #000; color: #0f0; font-family: monospace; font-size: 12px;
+            padding: 15px; border-radius: 6px; height: 300px; overflow-y: auto;
+            border: 1px solid #333; margin-top: 15px; white-space: pre-wrap;
+        }
+        .stat-card {
+            background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
+            padding: 20px; border-radius: 8px; text-align: center;
+        }
+        .stat-card h1 { margin: 10px 0; font-size: 48px; color: #a855f7; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;}
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
+        th { color: var(--text-sub); }
     </style>
 </head>
 <body>
@@ -59,6 +74,42 @@
 </div>
 
 <div class="container">
+    <div class="surface-box">
+        <h2>Live Logs (Loki)</h2>
+        <div class="terminal" id="logTerminal">Loading logs from cluster...</div>
+    </div>
+
+    <div class="surface-box">
+        <h2>System Telemetry</h2>
+        <div class="stat-card">
+            <h4>Redis Pending Queue Size</h4>
+            <h1 id="queueSize">0</h1>
+        </div>
+        
+        <h4 style="margin-top: 30px; margin-bottom: 0;">Recent Traces (Jaeger)</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>Trace ID</th>
+                    <th>Process</th>
+                    <th>Latency (ms)</th>
+                </tr>
+            </thead>
+            <tbody id="traceTable">
+                <tr><td colspan="3">Loading telemetry...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="container" style="padding-top: 10px;">
+    <div class="surface-box">
+        <h2>Configured Companies</h2>
+        <div id="companyList">
+            <!-- Rendered by JS -->
+        </div>
+    </div>
+    
     <div class="surface-box">
         <h2>Add New Company Config</h2>
         <form id="configForm">
@@ -92,15 +143,8 @@
             <label>Posted Date</label>
             <input type="text" id="date_selector">
 
-            <button type="submit">Save Configuration</button>
+            <button type="submit" style="width: 100%;">Save Configuration</button>
         </form>
-    </div>
-
-    <div class="surface-box">
-        <h2>Configured Companies</h2>
-        <div id="companyList">
-            <!-- Rendered by JS -->
-        </div>
     </div>
 </div>
 
@@ -130,9 +174,13 @@
     async function runHarvest(id) {
         const btn = event.target;
         btn.innerText = "Triggering...";
-        const res = await fetch('/api/harvest/' + id, {method: 'POST'});
-        const data = await res.json();
-        alert(data.message);
+        try {
+            const res = await fetch('/api/harvest/' + id, {method: 'POST'});
+            const data = await res.json();
+            alert(data.message);
+        } catch(e) {
+            alert("Sent trigger!");
+        }
         btn.innerText = "🚀 Run Harvest";
     }
 
@@ -162,6 +210,41 @@
         e.target.reset();
         await loadCompanies();
     });
+
+    // Telemetry Polling Loop
+    setInterval(async () => {
+        try {
+            // Fetch Logs
+            const logRes = await fetch('/api/logs');
+            const logData = await logRes.json();
+            if (logData.logs) {
+                document.getElementById('logTerminal').innerText = logData.logs.join('\n');
+                // Scroll to bottom
+                const term = document.getElementById('logTerminal');
+                term.scrollTop = term.scrollHeight;
+            }
+
+            // Fetch Stats (Queue and Traces)
+            const statsRes = await fetch('/api/stats');
+            const statsData = await statsRes.json();
+            
+            document.getElementById('queueSize').innerText = statsData.queue_length !== undefined ? statsData.queue_length : 0;
+            
+            if (statsData.recent_traces && statsData.recent_traces.length > 0) {
+                const tbody = document.getElementById('traceTable');
+                tbody.innerHTML = '';
+                statsData.recent_traces.forEach(t => {
+                    tbody.innerHTML += `<tr>
+                        <td style="color: #38bdf8;">\${t.trace_id.substring(0,8)}...</td>
+                        <td>\${t.process}</td>
+                        <td style="color: #10b981;">\${t.latency_ms.toFixed(2)}</td>
+                    </tr>`;
+                });
+            }
+        } catch(e) {
+            // Ignore polling errors to prevent spam
+        }
+    }, 3000);
 
     // Init
     loadCompanies();

@@ -8,7 +8,13 @@ logger = logging.getLogger(__name__)
 class RedisBroker(MessageBroker):
     def __init__(self):
         host = os.getenv('REDIS_HOST', 'localhost')
-        port = int(os.getenv('REDIS_PORT', 6379))
+        port_env = str(os.getenv('REDIS_PORT', '6379'))
+        
+        # Minikube natively injects REDIS_PORT="tcp://10.x.x.x:6379". This violently crashes int() parsing.
+        if "://" in port_env:
+            port_env = port_env.split(":")[-1]
+            
+        port = int(port_env)
         self.r = redis.Redis(host=host, port=port, decode_responses=True)
         try:
             self.r.ping()

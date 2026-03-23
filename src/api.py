@@ -130,12 +130,19 @@ async def get_logs():
 
 @app.get("/api/stats")
 async def get_stats():
-    from src.cache.Redis import Redis
+    from src.broker import get_broker
     import urllib.request
     import json
-    cache = Redis()
-    r = cache.r
-    queue_len = r.llen("jobs")
+    
+    try:
+        broker = get_broker()
+        # Natively peel the Redis raw socket to check queue length without breaching the Interface
+        if broker.__class__.__name__ == "RedisBroker":
+            queue_len = broker.r.llen("jobs")
+        else:
+            queue_len = 0 # Kafka manages its own consumer lags
+    except Exception:
+        queue_len = 0
     
     # Query Jaeger for recent traces to show scraping speeds
     traces = []

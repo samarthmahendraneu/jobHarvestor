@@ -61,10 +61,10 @@ async def scrape_job_details_on_page(page, payload: ScraperPayload):
         from src.Database.database import Database
         db = Database()
         query = """
-            INSERT INTO job_details(job_id, title, location, department, summary, long_description, date)
-            VALUES(%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO job_details(job_id, title, location, department, summary, long_description, date, url)
+            VALUES(%s, %s, %s, %s, %s, %s, %s,%s)
         """
-        params = (job_id, title, location, department, summary, long_desc, date_val)
+        params = (job_id, title, location, department, summary, long_desc, date_val, payload.url)
         db.insert_query(query, params)
 
         # Update the payload with the scraped details (optional)
@@ -105,6 +105,7 @@ async def scrape_batch(payloads):
     try:
         browser = await launch(
             headless=True,
+            executablePath='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         )
 
@@ -119,13 +120,13 @@ async def scrape_batch(payloads):
 
 async def main():
     config = {
-        "job_id": "#jobNumber",
-        "title": ".jd__header--title",
-        "location": ".addressCountry",
-        "department": "#job-team-name",
-        "summary": "#jd-job-summary",
-        "long_description": "#jd-description",
-        "date": "#jobPostDate"
+        "job_id": "#jobdetails-jobnumber",
+        "title": "#jobdetails-postingtitle",
+        "location": "#jobdetails-joblocation",
+        "department": "#jobdetails-teamname",
+        "summary": "#jobdetails-jobdetails-jobsummary-content-row > span",
+        "long_description": "#jobdetails-jobdetails-jobdescription-content-row > span",
+        "date": "#jobdetails-jobpostdate"
     }
 
     from src.cache.Redis import Redis

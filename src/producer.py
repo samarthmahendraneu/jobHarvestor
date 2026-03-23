@@ -113,8 +113,10 @@ async def scrape_batch(payloads: List[ScraperPayload]) -> None:
     redis_client = Redis()
     browser = None
     try:
+        print("Initializing headless browser using system Google Chrome...")
         browser = await launch(
             headless=True,
+            executablePath='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         )
 
@@ -128,7 +130,9 @@ async def scrape_batch(payloads: List[ScraperPayload]) -> None:
             page = await browser.newPage()
             page.setDefaultNavigationTimeout(90000)
 
+            print(f"  -> Fetching {payload.url} (waiting for networkidle0, up to 90s)...")
             jobs = await scrape_jobs_on_page(page, payload, redis_client)
+            print(f"  -> Found {len(jobs)} jobs on this page.")
             results.append((payload.url, jobs))
 
             await page.close()
@@ -147,9 +151,9 @@ async def main():
     page_key = "page"
     page_limit = 175
     config = {
-        'job_list_selector': ".table-col-1",
-        'title_selector': ".table--advanced-search__title",
-        'link_selector': ".table--advanced-search__title",
+        'job_list_selector': "div.job-list-item",
+        'title_selector': "h3 a",
+        'link_selector': "h3 a",
     }
 
     # Prepare all payloads

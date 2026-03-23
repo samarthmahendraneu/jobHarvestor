@@ -95,5 +95,5 @@ ob = Database()
 ob.test_connection()
 
 # # creating table
-# ob.create_table_job_details()
+ob.create_table_job_details()
 

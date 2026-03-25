@@ -338,6 +338,235 @@ spec:
       targetPort: 3100
 ---
 # ==========================================
+# 3b. GRAFANA
+# ==========================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki:3100
+        editable: true
+      - name: Jaeger
+        type: jaeger
+        uid: jaeger
+        access: proxy
+        url: http://jaeger:16686
+        editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-json
+data:
+  dashboard.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "graphTooltip": 1,
+      "panels": [
+        {
+          "title": "Producer — Jobs Queued Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "rate(producer_jobs_queued_total[1m])", "legendFormat": "jobs/sec" }],
+          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }, "unit": "ops" }, "overrides": [] }
+        },
+        {
+          "title": "Producer — Pages Processed vs Failed",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "rate(producer_pages_processed_total[1m])", "legendFormat": "processed/sec" },
+            { "expr": "rate(producer_pages_failed_total[1m])", "legendFormat": "failed/sec" }
+          ],
+          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }, "unit": "ops" }, "overrides": [] }
+        },
+        {
+          "title": "Producer — Scrape Duration (p50/p95/p99)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, rate(producer_page_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, rate(producer_page_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p95" },
+            { "expr": "histogram_quantile(0.99, rate(producer_page_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p99" }
+          ],
+          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "unit": "s" }, "overrides": [] }
+        },
+        {
+          "title": "Consumer — Jobs Inserted Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "rate(consumer_jobs_inserted_total[1m])", "legendFormat": "inserted/sec" }],
+          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }, "unit": "ops" }, "overrides": [] }
+        },
+        {
+          "title": "Consumer — Jobs Failed Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "rate(consumer_jobs_failed_total[1m])", "legendFormat": "failed/sec" }],
+          "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }, "unit": "ops" }, "overrides": [] }
+        },
+        {
+          "title": "Consumer — Job Scrape Duration (p50/p95/p99)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, rate(consumer_job_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, rate(consumer_job_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p95" },
+            { "expr": "histogram_quantile(0.99, rate(consumer_job_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p99" }
+          ],
+          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "unit": "s" }, "overrides": [] }
+        },
+        {
+          "title": "Consumer — Batch Duration (p50/p95)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, rate(consumer_batch_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, rate(consumer_batch_duration_seconds_bucket[5m]))", "legendFormat": "p95" }
+          ],
+          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }, "unit": "s" }, "overrides": [] }
+        },
+        {
+          "title": "Active Browser Sessions",
+          "type": "gauge",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "producer_active_browsers", "legendFormat": "Producer" },
+            { "expr": "sum(consumer_active_browsers)", "legendFormat": "Consumer" }
+          ],
+          "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 5 }] }, "min": 0, "max": 10 }, "overrides": [] }
+        },
+        {
+          "title": "Totals",
+          "type": "stat",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "producer_jobs_queued_total", "legendFormat": "Jobs Queued" },
+            { "expr": "consumer_jobs_inserted_total", "legendFormat": "Jobs Inserted" },
+            { "expr": "consumer_jobs_failed_total", "legendFormat": "Jobs Failed" },
+            { "expr": "consumer_batches_processed_total", "legendFormat": "Batches Done" }
+          ],
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+        },
+        {
+          "title": "Live Logs",
+          "type": "logs",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "targets": [{ "expr": "{application=~\"jobharvestor-consumer|jobharvestor-producer\"}", "refId": "A" }],
+          "options": { "showTime": true, "sortOrder": "Descending", "enableLogDetails": true, "wrapLogMessage": true }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["jobharvestor"],
+      "time": { "from": "now-30m", "to": "now" },
+      "title": "Job Harvestor",
+      "uid": "jobharvestor-main",
+      "version": 1
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: "admin"
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "true"
+        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+          value: "Viewer"
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: dashboard-provider
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: dashboard-json
+          mountPath: /var/lib/grafana/dashboards
+      volumes:
+      - name: datasources
+        configMap:
+          name: grafana-datasources
+      - name: dashboard-provider
+        configMap:
+          name: grafana-dashboard-provider
+      - name: dashboard-json
+        configMap:
+          name: grafana-dashboard-json
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30030
+---
+# ==========================================
 # 4. KAFKA BROKER (Zookeeper & Kafka)
 # ==========================================
 apiVersion: apps/v1

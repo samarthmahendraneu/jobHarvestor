@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 # Telemetry
-from prometheus_client import start_http_server, Counter
+from prometheus_client import start_http_server, Counter, Histogram, Gauge
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
@@ -38,6 +38,10 @@ except Exception as e:
 # 2. Prometheus Metrics
 JOBS_INSERTED = Counter('consumer_jobs_inserted_total', 'Total job details successfully saved to DB')
 JOBS_FAILED = Counter('consumer_jobs_failed_total', 'Total job detail pages failed to scrape')
+BATCHES_PROCESSED = Counter('consumer_batches_processed_total', 'Total batches completed')
+JOB_SCRAPE_DURATION = Histogram('consumer_job_scrape_duration_seconds', 'Time to scrape a single job detail page', buckets=[1, 2, 5, 10, 20, 30, 60, 120])
+BATCH_DURATION = Histogram('consumer_batch_duration_seconds', 'Time to process an entire batch', buckets=[5, 10, 30, 60, 120, 300])
+ACTIVE_BROWSERS = Gauge('consumer_active_browsers', 'Number of active headless browser instances')
 
 # 3. Jaeger / OTel Tracing
 resource = Resource(attributes={"service.name": "jobharvestor-consumer"})
@@ -77,6 +81,8 @@ async def get_inner_text(page, selector: str) -> str:
 async def scrape_job_details_on_page(page, payload: ScraperPayload):
     with tracer.start_as_current_span("scrape_job_details_on_page") as span:
         span.set_attribute("payload.url", payload.url)
+        import time as _time
+        _start = _time.time()
         try:
             await asyncio.sleep(random.uniform(1, 3))
             await page.goto(payload.url, {'waitUntil': 'networkidle0', 'timeout': 90000})
@@ -105,6 +111,7 @@ async def scrape_job_details_on_page(page, payload: ScraperPayload):
             db.insert_query(query, params)
             
             JOBS_INSERTED.inc()
+            JOB_SCRAPE_DURATION.observe(_time.time() - _start)
             logger.info(f"Successfully processed and stored: {payload.url}")
 
         except Exception as e:
@@ -131,9 +138,12 @@ async def process_job_detail(payload, browser):
 async def scrape_batch(payloads):
     with tracer.start_as_current_span("consumer_scrape_batch") as span:
         import os
+        import time as _time
+        _batch_start = _time.time()
         browser = None
         try:
             chrome_path = os.getenv('CHROME_PATH', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
+            ACTIVE_BROWSERS.inc()
             browser = await launch(
                 headless=True,
                 executablePath=chrome_path,
@@ -143,6 +153,9 @@ async def scrape_batch(payloads):
             tasks = [process_job_detail(payload, browser) for payload in payloads]
             await asyncio.gather(*tasks)
         finally:
+            ACTIVE_BROWSERS.dec()
+            BATCHES_PROCESSED.inc()
+            BATCH_DURATION.observe(_time.time() - _batch_start)
             if browser:
                 await browser.close()
 

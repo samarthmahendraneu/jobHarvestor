@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional
 
 # Telemetry
-from prometheus_client import start_http_server, Counter
+from prometheus_client import start_http_server, Counter, Histogram, Gauge
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
@@ -37,9 +37,11 @@ except Exception as e:
     logger.addHandler(logging.StreamHandler())
 
 # 2. Prometheus Metrics
-JOBS_QUEUED = Counter('producer_jobs_queued_total', 'Total jobs queued to Redis')
+JOBS_QUEUED = Counter('producer_jobs_queued_total', 'Total jobs queued to broker')
 PAGES_PROCESSED = Counter('producer_pages_processed_total', 'Total listing pages processed')
 PAGES_FAILED = Counter('producer_pages_failed_total', 'Total listing pages failed')
+PAGE_SCRAPE_DURATION = Histogram('producer_page_scrape_duration_seconds', 'Time to scrape a single listing page', buckets=[1, 2, 5, 10, 20, 30, 60, 120])
+ACTIVE_BROWSERS = Gauge('producer_active_browsers', 'Number of active headless browser instances')
 
 # 3. Jaeger / OTel Tracing
 resource = Resource(attributes={"service.name": "jobharvestor-producer"})
@@ -107,6 +109,8 @@ async def get_link_href(parent_element, selector: str, page, base_url: str) -> s
 async def scrape_jobs_on_page(page, payload: ScraperPayload, broker) -> List[Dict[str, str]]:
     with tracer.start_as_current_span("scrape_jobs_on_page") as span:
         span.set_attribute("payload.url", payload.url)
+        import time as _time
+        _start = _time.time()
         try:
             await page.goto(payload.url, {
                 'waitUntil': 'networkidle0',
@@ -146,6 +150,7 @@ async def scrape_jobs_on_page(page, payload: ScraperPayload, broker) -> List[Dic
                     logger.error(f"Error extracting job element: {e}")
 
             PAGES_PROCESSED.inc()
+            PAGE_SCRAPE_DURATION.observe(_time.time() - _start)
             span.set_attribute("jobs_found", len(jobs))
             return jobs
 
@@ -163,7 +168,8 @@ async def scrape_batch(payloads: List[ScraperPayload]) -> None:
         broker = get_broker()
         browser = None
         try:
-            logger.info("Initializing headless browser utilizing system Chrome...")
+            logger.info("Initializing headless browser...")
+            ACTIVE_BROWSERS.inc()
             chrome_path = os.getenv('CHROME_PATH', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
             browser = await launch(
                 headless=True,
@@ -186,6 +192,7 @@ async def scrape_batch(payloads: List[ScraperPayload]) -> None:
                 await page.close()
 
         finally:
+            ACTIVE_BROWSERS.dec()
             if browser:
                 await browser.close()
 

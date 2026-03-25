@@ -11,16 +11,11 @@ from src.Database.database import Database
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Setup the tables on startup and close on shutdown if necessary
     from prometheus_client import start_http_server
     try:
         start_http_server(8000)
     except Exception:
-        pass # Already started
-    
-    db = Database()
-    db.create_table_job_details()
-    db.create_table_companies_config()
+        pass  # Already started
     yield
 
 app = FastAPI(lifespan=lifespan)

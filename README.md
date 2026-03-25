@@ -22,6 +22,8 @@ Job Harvestor is an enterprise-grade, distributed web scraping pipeline designed
 *   **Scraper Engine**: Multi-mode headless Chromium workers with advanced stealth profiles to bypass bot detection.
 *   **Data Layer**: PostgreSQL with auto-incrementing identity and URL-based deduplication for 100% data integrity.
 
+<img width="2084" height="1286" alt="image" src="https://github.com/user-attachments/assets/bc088aa6-cb4e-491d-91db-fccbebe200ca" />
+
 ---
 
 ## 📦 Local Setup (Minikube)

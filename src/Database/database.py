@@ -2,37 +2,59 @@
 
 from psycopg2 import connect
 from psycopg2.extras import DictCursor
-from psycopg2.extensions import connection as pg_connection
+from psycopg2.pool import ThreadedConnectionPool
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Global connection pool — shared across all threads/requests
+_pool = None
+
+def _get_pool():
+    global _pool
+    if _pool is None or _pool.closed:
+        _pool = ThreadedConnectionPool(
+            minconn=2,
+            maxconn=20,
+            host=os.getenv('DB_HOST', 'localhost'),
+            port=5432,
+            user='postgres',
+            password=os.getenv('DB_PASSWORD', ''),
+            database='postgres'
+        )
+        logger.info(f"Connection pool created (min=2, max=20)")
+    return _pool
 
 
 class Database:
 
     def __init__(self):
-        # host - localhost: 5432
-        # user - postgres
-        # database - Jobstats
-        # password - os.getenv('DB_PASSWORD')
-        self.connection = connect(
-            host=os.getenv('DB_HOST', 'localhost'),
-            port=5432,
-            user='postgres',
-            password=os.getenv('DB_PASSWORD', ''),
-            database='postgres')
+        pool = _get_pool()
+        self.connection = pool.getconn()
+        self.connection.autocommit = False
         self.cursor = self.connection.cursor(cursor_factory=DictCursor)
 
-    def test_connection(self):
-        self.cursor.execute("SELECT version();")
-        record = self.cursor.fetchone()
-        print("You are connected to - ", record, "\n")
+    def close(self):
+        """Return connection back to the pool."""
+        try:
+            self.cursor.close()
+        except Exception:
+            pass
+        try:
+            _get_pool().putconn(self.connection)
+        except Exception:
+            pass
 
-    def __enter__(self) -> pg_connection:
-        return self.connection
+    def __enter__(self):
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.connection.commit()
-        self.cursor.close()
-        self.connection.close()
+        if exc_type is None:
+            self.connection.commit()
+        else:
+            self.connection.rollback()
+        self.close()
 
     def test_connection(self):
         self.cursor.execute("SELECT version();")
@@ -41,37 +63,34 @@ class Database:
 
     def execute_query(self, query: str):
         self.cursor.execute(query)
-        return self.cursor.fetchall()
+        result = self.cursor.fetchall()
+        self.close()
+        return result
 
     def execute_query_with_params(self, query: str, params: tuple):
         self.cursor.execute(query, params)
-        return self.cursor.fetchall()
+        result = self.cursor.fetchall()
+        self.close()
+        return result
 
     def execute_query_with_params_and_fetch_one(self, query: str, params: tuple):
         self.cursor.execute(query, params)
-        return self.cursor.fetchone()
+        result = self.cursor.fetchone()
+        self.close()
+        return result
 
     def execute_query_with_params_and_fetch_all(self, query: str, params: tuple):
         self.cursor.execute(query, params)
-        return self.cursor.fetchall()
+        result = self.cursor.fetchall()
+        self.close()
+        return result
 
     def insert_query(self, query: str, params: tuple):
         self.cursor.execute(query, params)
         self.connection.commit()
-        print("Data inserted successfully")
-
+        self.close()
 
     def create_table_job_details(self):
-        """
-             config ={
-        "job_id": "#jobNumber",
-        "title": ".jd__header--title",
-        "location": ".addressCountry",
-        "department": "#job-team-name",
-        "summary": "#jd-job-summary",
-        "long_description": "#jd-description",
-        "date": "#jobPostDate"
-    }"""
         query = """
         CREATE TABLE IF NOT EXISTS job_details(
             job_id VARCHAR(255) PRIMARY KEY,
@@ -87,8 +106,8 @@ class Database:
         """
         self.cursor.execute(query)
         self.connection.commit()
+        self.close()
         print("Table created successfully")
-
 
     def create_table_companies_config(self):
         query = """
@@ -127,14 +146,13 @@ class Database:
         """
         self.cursor.execute(seed_query)
         self.connection.commit()
+        self.close()
         
         print("Table companies_config created successfully")
 
-# testing the connection
-ob = Database()
-ob.test_connection()
 
-# # creating tables
-ob.create_table_job_details()
-ob.create_table_companies_config()
-
+# Initialize tables on import
+_db = Database()
+_db.test_connection()
+_db.create_table_job_details()
+_db.create_table_companies_config()

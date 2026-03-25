@@ -6,7 +6,7 @@ Job Harvestor is an enterprise-grade, distributed web scraping pipeline designed
 
 ## 🚀 Key Features
 
-*   **Autonomous AI Selector Extraction For New companies **: Integrated `gpt-4o` engine that analyzes DOM structures in real-time to generate and validate CSS selectors for dynamic SPAs.
+*   **Autonomous AI Selector Extraction For New companies**: Integrated `gpt-4o` engine that analyzes DOM structures in real-time to generate and validate CSS selectors for dynamic SPAs.
 *   **Distributed Architecture**: Decoupled Producer-Consumer model running on **Kubernetes**, utilizing **Kafka** for high-throughput message queuing.
 *   **Massive Scalability**: Built with **PostgreSQL Threaded Connection Pooling** and per-domain **Token-Bucket Rate Limiting** to handle thousands of target companies concurrently.
 *   **Test-Extract Workbench**: A dedicated developer dashboard (`/test`) for synchronous AI extraction testing and selector refinement.

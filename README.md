@@ -1,4 +1,4 @@
-# Job Harvestor
+<img width="2978" height="1698" alt="image" src="https://github.com/user-attachments/assets/b77d955e-dc79-4f7c-9d05-ade1efe90367" /># Job Harvestor
 
 A web scraping pipeline for extracting job listings from company career pages and storing them in a PostgreSQL database. It uses a Producer-Consumer architecture backed by a message broker (Kafka or Redis).
 
@@ -92,6 +92,8 @@ minikube service loki
 kubectl logs -l app=api-dashboard -f
 kubectl logs -l app=consumer -f
 ```
+
+<img width="2978" height="1698" alt="image" src="https://github.com/user-attachments/assets/1bc16128-284a-4b64-b9fd-e61b35c8e652" />
 
 ---
 

@@ -19,6 +19,7 @@ from opentelemetry.sdk.resources import Resource
 from src.broker import get_broker
 
 from src.stealth import prepare_stealth_page
+from src.rate_limiter import rate_limiter
 
 # --- OBSERVABILITY SETUP ---
 try:
@@ -112,6 +113,7 @@ async def scrape_jobs_on_page(page, payload: ScraperPayload, broker) -> List[Dic
         import time as _time
         _start = _time.time()
         try:
+            await rate_limiter.wait(payload.url)
             await page.goto(payload.url, {
                 'waitUntil': 'networkidle0',
                 'timeout': 90000

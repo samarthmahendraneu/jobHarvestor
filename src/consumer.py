@@ -79,7 +79,7 @@ async def get_inner_text(page, selector: str) -> str:
     return ""
 
 
-async def scrape_job_details_on_page(page, payload: ScraperPayload):
+async def scrape_job_details_on_page(page, payload: ScraperPayload, broker):
     with tracer.start_as_current_span("scrape_job_details_on_page") as span:
         span.set_attribute("payload.url", payload.url)
         import time as _time
@@ -120,13 +120,27 @@ async def scrape_job_details_on_page(page, payload: ScraperPayload):
             logger.error(f"Error scraping job details from {payload.url}: {e}")
             span.record_exception(e)
             JOBS_FAILED.inc()
+            
+            # Publish to dead-letter queue for later inspection/retry
+            import json
+            dlq_payload = {
+                "url": payload.url,
+                "error": str(e),
+                "job_id": payload.job_id,
+                "title": payload.title,
+            }
+            try:
+                broker.produce("jobs-dlq", json.dumps(dlq_payload))
+                logger.info(f"[DLQ] Published failed job to jobs-dlq: {payload.url}")
+            except Exception as dlq_err:
+                logger.error(f"Failed to publish to DLQ: {dlq_err}")
 
 
-async def process_job_detail(payload, browser):
+async def process_job_detail(payload, browser, broker):
     page = None
     try:
         page = await prepare_stealth_page(browser)
-        await scrape_job_details_on_page(page, payload)
+        await scrape_job_details_on_page(page, payload, broker)
     except Exception as e:
         logger.error(f"Error processing {payload.url}: {e}")
     finally:
@@ -137,7 +151,7 @@ async def process_job_detail(payload, browser):
                 pass
 
 
-async def scrape_batch(payloads):
+async def scrape_batch(payloads, broker):
     with tracer.start_as_current_span("consumer_scrape_batch") as span:
         import os
         import time as _time
@@ -152,7 +166,7 @@ async def scrape_batch(payloads):
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
             )
 
-            tasks = [process_job_detail(payload, browser) for payload in payloads]
+            tasks = [process_job_detail(payload, browser, broker) for payload in payloads]
             await asyncio.gather(*tasks)
         finally:
             ACTIVE_BROWSERS.dec()
@@ -196,7 +210,7 @@ async def main():
 
             if jobs:
                 logger.info(f"Scraping active queue micro-batch of {len(jobs)} items.")
-                await scrape_batch(jobs)
+                await scrape_batch(jobs, broker)
 
             await asyncio.sleep(2)
         except Exception as e:

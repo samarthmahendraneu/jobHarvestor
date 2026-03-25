@@ -137,7 +137,7 @@ async def scrape_batch(payloads):
             browser = await launch(
                 headless=True,
                 executablePath=chrome_path,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
             )
 
             tasks = [process_job_detail(payload, browser) for payload in payloads]

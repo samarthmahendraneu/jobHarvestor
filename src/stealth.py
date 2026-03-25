@@ -1,64 +1,66 @@
 import random
+from pyppeteer.page import Page
 from pyppeteer_stealth import stealth
+from fake_useragent import UserAgent
 
-# 🔹 Stable curated UA pool (better than fake-useragent)
-USER_AGENTS = [
-    # Chrome Mac
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+# Initialize globally to maintain caching efficiency
+ua = UserAgent(os=['windows', 'macos', 'linux'])
 
-    # Chrome Windows
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.140 Safari/537.36",
-
-    # Chrome Linux
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-
-    # Edge
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-]
-
-VIEWPORTS = [
-    {"width": 1920, "height": 1080},
-    {"width": 1366, "height": 768},
-    {"width": 1536, "height": 864},
-    {"width": 1440, "height": 900},
-]
-
-ACCEPT_LANGUAGES = [
-    "en-US,en;q=0.9",
-    "en-GB,en;q=0.8",
-]
-
-
-async def prepare_stealth_page(browser):
+async def prepare_stealth_page(browser) -> Page:
+    """
+    Creates a new Pyppeteer page and aggressively strips out the 'headless' 
+    Chrome fingerprint using standard OS emulation and dynamic headers.
+    """
     page = await browser.newPage()
-
-    # 1. User-Agent rotation
-    ua = random.choice(USER_AGENTS)
-    await page.setUserAgent(ua)
-
-    # 2. Headers (important for fingerprint consistency)
-    await page.setExtraHTTPHeaders({
-        "Accept-Language": random.choice(ACCEPT_LANGUAGES),
-        "Upgrade-Insecure-Requests": "1",
-    })
-
-    # 3. Viewport randomization
-    await page.setViewport(random.choice(VIEWPORTS))
-
-    # 4. Timezone spoof (basic)
-    try:
-        await page.emulateTimezone("America/New_York")
-    except Exception:
-        pass
-
-    # 5. Stealth plugin (CRITICAL)
+    
+    # 1. Apply the core pyppeteer-stealth evasion plugins
     await stealth(page)
-
-    # 6. Minor behavior randomization (optional but good)
-    await page.evaluateOnNewDocument("""
-        () => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        }
-    """)
+    
+    # 2. Inject a completely random realistic User-Agent (Chrome, Edge, Firefox, Safari)
+    random_ua = ua.random
+    await page.setUserAgent(random_ua)
+    
+    # 3. Simulate realistic human-driven HTTP Headers
+    await page.setExtraHTTPHeaders({
+        'Accept-Language': random.choice([
+            'en-US,en;q=0.9', 
+            'en-GB,en;q=0.8', 
+            'es-US,es;q=0.9', 
+            'fr-FR,fr;q=0.9'
+        ]),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0'
+    })
+    
+    # 4. Aggressively strip Javascript Automation signatures via evaluateOnNewDocument
+    await page.evaluateOnNewDocument('''
+        // Nuke the webdriver attribute entirely
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        });
+        
+        // Mock standard hardware concurrency and memory to avoid looking like a sterile test environment
+        Object.defineProperty(navigator, 'deviceMemory', {
+            get: () => 8
+        });
+        Object.defineProperty(navigator, 'hardwareConcurrency', {
+            get: () => 4
+        });
+        
+        // Mock generic browser plugins
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3] 
+        });
+    ''')
+    
+    # 5. Mask the window resolution to look like a standard monitor
+    width = random.choice([1920, 1440, 1366, 1536])
+    height = random.choice([1080, 900, 768, 864])
+    await page.setViewport({'width': width, 'height': height})
 
     return page

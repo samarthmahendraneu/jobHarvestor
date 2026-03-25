@@ -28,7 +28,7 @@ try:
         tags={"application": "jobharvestor-consumer"},
         version="1",
     )
-    logger = logging.getLogger("consumer")
+    logger = logging.getLogger("detail-consumer")
     logger.setLevel(logging.INFO)
     logger.addHandler(loki_handler)
     logger.addHandler(logging.StreamHandler())

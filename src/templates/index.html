@@ -183,14 +183,24 @@
     async function runHarvest(id) {
         const btn = event.target;
         btn.innerText = "Triggering...";
+        btn.disabled = true;
+        
+        // Log to terminal
+        const term = document.getElementById('logTerminal');
+        term.innerHTML += `\n[UI] Triggering harvest for company ID: ${id}...`;
+        term.scrollTop = term.scrollHeight;
+
         try {
             const res = await fetch('/api/harvest/' + id, {method: 'POST'});
             const data = await res.json();
-            alert(data.message);
+            term.innerHTML += `\n[API] ${data.message || 'Harvest started.'}`;
         } catch(e) {
-            alert("Sent trigger!");
+            term.innerHTML += `\n[ERROR] Failed to trigger: ${e.message}`;
         }
+        
+        term.scrollTop = term.scrollHeight;
         btn.innerText = "🚀 Run Harvest";
+        btn.disabled = false;
     }
 
     document.getElementById('configForm').addEventListener('submit', async (e) => {
@@ -285,9 +295,9 @@
                 tbody.innerHTML = '';
                 statsData.recent_traces.forEach(t => {
                     tbody.innerHTML += `<tr>
-                        <td style="color: #38bdf8;">\${t.trace_id.substring(0,8)}...</td>
-                        <td>\${t.process}</td>
-                        <td style="color: #10b981;">\${t.latency_ms.toFixed(2)}</td>
+                        <td style="color: #38bdf8;">${t.trace_id.substring(0,8)}...</td>
+                        <td>${t.process}</td>
+                        <td style="color: #10b981;">${t.latency_ms.toFixed(2)}</td>
                     </tr>`;
                 });
             }

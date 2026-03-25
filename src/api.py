@@ -93,161 +93,168 @@ async def run_harvest(company_id: int):
     broker.produce("harvest-requests", json.dumps(config, default=str))
     return {"status": "started", "message": f"Harvest request queued for {config['company_name']}"}
 
-class SelectorRequest(BaseModel):
+class TestRequest(BaseModel):
     url: str
 
 @app.get("/test", response_class=HTMLResponse)
 async def test_page(request: Request):
     return templates.TemplateResponse(request=request, name="test.html")
 
-@app.post("/api/generate-selectors")
-async def generate_selectors(req: SelectorRequest):
-    try:
-        from src.llm_extractor import extract_css_selectors
-        selectors = await extract_css_selectors(req.url)
-        return {"status": "success", "selectors": selectors}
-    except Exception as e:
-        return {"error": str(e)}
+def normalize_url(base_url: str, href: str) -> str:
+    from urllib.parse import urljoin, urlparse
+    if not href:
+        return ""
+    href = href.strip()
+    if href.startswith(("http://", "https://")):
+        return href
+        
+    joined = urljoin(base_url, href)
+    
+    # De-duplicate common path segments (e.g. /jobs/ + jobs/results -> /jobs/results)
+    parsed = urlparse(joined)
+    path_parts = parsed.path.split("/")
+    clean_parts = []
+    for i, part in enumerate(path_parts):
+        if i > 0 and part and part == path_parts[i-1] and part in ("jobs", "results", "careers", "about"):
+            continue
+        clean_parts.append(part)
+    
+    new_path = "/".join(clean_parts)
+    return f"{parsed.scheme}://{parsed.netloc}{new_path}"
 
 @app.post("/api/test-extract")
-async def test_extract(req: SelectorRequest):
-    import asyncio
-    from urllib.parse import urljoin, urlparse
-
-    def normalize_url(current_url: str, href: str) -> str:
-        if not href:
-            return ""
-        href = href.strip()
-        if href.startswith(("http://", "https://")):
-            return href
-        if href.startswith("//"):
-            parsed = urlparse(current_url)
-            return f"{parsed.scheme}:{href}"
-        
-        joined = urljoin(current_url, href)
-        
-        # De-duplicate common path segments that often get doubled up by urljoin
-        # e.g. .../jobs/ + jobs/results -> .../jobs/jobs/results
-        parsed_joined = urlparse(joined)
-        path_parts = parsed_joined.path.split("/")
-        clean_parts = []
-        for i, part in enumerate(path_parts):
-            if i > 0 and part and part == path_parts[i-1] and part in ("jobs", "results", "careers", "about"):
-                continue
-            clean_parts.append(part)
-        
-        new_path = "/".join(clean_parts)
-        return f"{parsed_joined.scheme}://{parsed_joined.netloc}{new_path}"
-
+async def test_extract(req: TestRequest):
+    """Monolithic test endpoint (backwards compatible)."""
     try:
-        async def run_test():
-            from src.llm_extractor import extract_css_selectors
-            from src.stealth import prepare_stealth_page
-            from pyppeteer import launch
+        from src.llm_extractor import extract_css_selectors
+        logger.info(f"--- [API TEST-EXTRACT] Starting for {req.url} ---")
+        selectors = await extract_css_selectors(req.url)
+        
+        from pyppeteer import launch
+        chrome_path = os.getenv('CHROME_PATH', '/usr/bin/chromium')
+        browser = await launch(headless=True, executablePath=chrome_path, args=['--no-sandbox'])
+        page = await browser.newPage()
+        await page.goto(req.url, {'waitUntil': 'networkidle2'})
+        
+        listings = await page.evaluate(f'''() => {{
+            const results = [];
+            const items = document.querySelectorAll("{selectors.get('job_list_selector', '')}");
+            items.forEach(el => {{
+                const titleEl = el.querySelector("{selectors.get('title_selector', '')}");
+                const linkEl = el.querySelector("{selectors.get('link_selector', '')}");
+                results.push({{
+                    title: titleEl ? titleEl.innerText.trim() : el.innerText.trim(),
+                    href: linkEl ? (linkEl.getAttribute('href') || linkEl.href) : ''
+                }});
+            }});
+            return results.slice(0, 10);
+        }}''')
+        
+        job_details = []
+        for l in listings:
+            l['href'] = normalize_url(req.url, l['href'])
+            
+        if listings:
+            await page.goto(listings[0]['href'], {'waitUntil': 'networkidle2'})
+            details = await page.evaluate(f'''(sels) => {{
+                return {{
+                    job_id: document.querySelector(sels.job_id_selector)?.innerText.trim() || '',
+                    title: document.querySelector(sels.job_title_selector)?.innerText.trim() || '',
+                    location: document.querySelector(sels.location_selector)?.innerText.trim() || '',
+                    department: document.querySelector(sels.department_selector)?.innerText.trim() || '',
+                    summary: document.querySelector(sels.summary_selector)?.innerText.trim() || '',
+                    long_description: document.querySelector(sels.long_description_selector)?.innerText.trim() || '',
+                    date: document.querySelector(sels.date_selector)?.innerText.trim() || ''
+                }};
+            }}''', selectors)
+            details['url'] = listings[0]['href']
+            job_details.append(details)
 
-            browser = await launch(
-                headless=True,
-                executablePath=os.getenv('CHROME_PATH', '/usr/bin/chromium'),
-                args=[
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-blink-features=AutomationControlled'
-                ]
-            )
-
-            try:
-                # 1. Get Selectors
-                logger.info(f"--- [API TEST-EXTRACT] Starting for {req.url} ---")
-                selectors = await extract_css_selectors(req.url)
-                jls = selectors.get("job_list_selector", "")
-                title_sel = selectors.get("title_selector", "")
-                link_sel = selectors.get("link_selector", "")
-
-                if not jls:
-                    logger.warning("No job_list_selector found in results.")
-                    return {"error": "No job_list_selector found", "selectors": selectors}
-
-                # 2. Load list page
-                logger.info(f"Loading listing page in stealth mode: {req.url}")
-                page = await prepare_stealth_page(browser)
-                await page.goto(req.url, {'waitUntil': 'networkidle0', 'timeout': 60000})
-                await asyncio.sleep(3)
-                
-                base_page_url = page.url 
-                logger.info(f"List page loaded. Final URL: {base_page_url}")
-
-                # 3. Get first job
-                logger.info("Extracting first job data from list...")
-                job = await page.evaluate("""(jls, title_sel, link_sel) => {
-                    const el = document.querySelector(jls);
-                    if (!el) return null;
-                    const titleEl = title_sel ? (el.querySelector(title_sel) || el) : el;
-                    const linkEl = link_sel ? (el.querySelector(link_sel) || el.querySelector('a')) : el.querySelector('a');
-                    return {
-                        title: titleEl ? titleEl.innerText.trim() : el.innerText.trim(),
-                        href: linkEl ? (linkEl.getAttribute("href") || linkEl.href || "") : ""
-                    };
-                }""", jls, title_sel, link_sel)
-
-                if not job or not job.get("href"):
-                    logger.error("Failed to find even one job/link on the list page.")
-                    return {"error": "No jobs found with those selectors", "selectors": selectors}
-
-                job_url = normalize_url(base_page_url, job["href"])
-                logger.info(f"Targeting detail page: {job_url}")
-
-                # 4. Scrape details
-                detail_page = await prepare_stealth_page(browser)
-                logger.info("Navigating to detail page...")
-                await detail_page.goto(job_url, {'waitUntil': 'networkidle0', 'timeout': 60000})
-                await asyncio.sleep(3)
-
-                detail_sels = {
-                    "job_id": selectors.get("job_id_selector", ""),
-                    "title": selectors.get("job_title_selector", ""),
-                    "location": selectors.get("location_selector", ""),
-                    "department": selectors.get("department_selector", ""),
-                    "summary": selectors.get("summary_selector", ""),
-                    "long_description": selectors.get("long_description_selector", ""),
-                    "date": selectors.get("date_selector", ""),
-                }
-
-                detail = {"url": job_url, "listing_title": job["title"]}
-                logger.info(f"Applying detail selectors: {detail_sels}")
-                for field, sel in detail_sels.items():
-                    if not sel:
-                        detail[field] = ""
-                        continue
-                    try:
-                        val = await detail_page.evaluate("""(selector) => {
-                            const el = document.querySelector(selector);
-                            return el ? el.innerText.trim() : "";
-                        }""", sel)
-                        detail[field] = val
-                    except:
-                        detail[field] = ""
-                
-                logger.info(f"Extraction complete for: {job_url}")
-                await detail_page.close()
-                await page.close()
-
-                return {
-                    "selectors": selectors,
-                    "listings": [{"title": job["title"], "href": job["href"]}],
-                    "job_details": [detail]
-                }
-
-            finally:
-                await browser.close()
-
-        result = await asyncio.wait_for(run_test(), timeout=180)
-        return {"status": "success", "data": result}
-
-    except asyncio.TimeoutError:
-        return {"error": "Timed out after 3 minutes."}
+        await browser.close()
+        return {"status": "success", "data": {"selectors": selectors, "listings": listings, "job_details": job_details}}
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Test extract failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.post("/api/test-listings")
+async def test_listings(req: TestRequest):
+    """Phase 12: Extract listing selectors and find all job links on page."""
+    try:
+        from src.llm_extractor import extract_listing_selectors
+        logger.info(f"--- [API TEST-LISTINGS] Starting for {req.url} ---")
+        selectors = await extract_listing_selectors(req.url)
+        
+        from pyppeteer import launch
+        chrome_path = os.getenv('CHROME_PATH', '/usr/bin/chromium')
+        browser = await launch(headless=True, executablePath=chrome_path, args=['--no-sandbox'])
+        page = await browser.newPage()
+        await page.goto(req.url, {'waitUntil': 'networkidle2'})
+        
+        listings = await page.evaluate(f'''(sels) => {{
+            const results = [];
+            const jls = sels.job_list_selector;
+            if (!jls) return [];
+            
+            const items = document.querySelectorAll(jls);
+            items.forEach(el => {{
+                const titleEl = sels.title_selector ? el.querySelector(sels.title_selector) : null;
+                const linkEl = sels.link_selector ? el.querySelector(sels.link_selector) : null;
+                results.push({{
+                    title: titleEl ? titleEl.innerText.trim() : el.innerText.trim(),
+                    href: linkEl ? (linkEl.getAttribute('href') || linkEl.href) : ''
+                }});
+            }});
+            return results;
+        }}''', selectors)
+        
+        for l in listings:
+            l['href'] = normalize_url(req.url, l['href'])
+            
+        await browser.close()
+        return {"status": "success", "data": {"selectors": selectors, "listings": listings}}
+    except Exception as e:
+        logger.error(f"Test listings failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.post("/api/test-details")
+async def test_details(req: TestRequest):
+    """Phase 12: Extract detail selectors and scrape fields from one specific URL."""
+    try:
+        from src.llm_extractor import extract_details_selectors
+        logger.info(f"--- [API TEST-DETAILS] Starting for {req.url} ---")
+        selectors = await extract_details_selectors(req.url)
+        
+        from pyppeteer import launch
+        chrome_path = os.getenv('CHROME_PATH', '/usr/bin/chromium')
+        browser = await launch(headless=True, executablePath=chrome_path, args=['--no-sandbox'])
+        page = await browser.newPage()
+        await page.goto(req.url, {'waitUntil': 'networkidle2'})
+        
+        details = await page.evaluate(f'''(sels) => {{
+            const getTxt = (sel) => {{
+                if (!sel) return '';
+                try {{
+                    const el = document.querySelector(sel);
+                    return el ? el.innerText.trim() : '';
+                }} catch(e) {{ return ''; }}
+            }};
+            return {{
+                job_id: getTxt(sels.job_id_selector),
+                title: getTxt(sels.job_title_selector),
+                location: getTxt(sels.location_selector),
+                department: getTxt(sels.department_selector),
+                summary: getTxt(sels.summary_selector),
+                long_description: getTxt(sels.long_description_selector),
+                date: getTxt(sels.date_selector)
+            }};
+        }}''', selectors)
+        details['url'] = req.url
+        
+        await browser.close()
+        return {"status": "success", "data": {"selectors": selectors, "job_details": [details]}}
+    except Exception as e:
+        logger.error(f"Test details failed: {e}")
+        return {"status": "error", "error": str(e)}
 
 @app.get("/api/logs")
 async def get_logs():

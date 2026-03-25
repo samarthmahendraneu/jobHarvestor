@@ -211,7 +211,7 @@ async def start_harvest_for_company(config: dict):
             link_selector=config.get('link_selector', ''),
             raw_config=config
         )
-        for i in range(10)
+        for i in range(100)
     ]
 
     batch_size = 5

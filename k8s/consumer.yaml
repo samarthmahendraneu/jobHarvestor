@@ -1,33 +1,78 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: consumer
+  name: consumer-discovery
   labels:
-    app: consumer
+    app: consumer-discovery
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
-      app: consumer
+      app: consumer-discovery
   template:
     metadata:
       labels:
-        app: consumer
+        app: consumer-discovery
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8001"
+        prometheus.io/port: "8002"
     spec:
       containers:
-      - name: consumer
+      - name: discovery
         image: jobharvestor-consumer:latest
+        command: ["python", "-m", "src.discovery_consumer"]
         imagePullPolicy: Never
         env:
         - name: DB_HOST
           value: "postgres"
         - name: REDIS_HOST
           value: "redis"
+        - name: KAFKA_HOST
+          value: "kafka:9092"
+        - name: KAFKA_GROUP_ID
+          value: "discovery-group"
+        - name: LOKI_URL
+          value: "http://loki:3100/loki/api/v1/push"
+        - name: OTLP_ENDPOINT
+          value: "http://jaeger:4318/v1/traces"
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-detail
+  labels:
+    app: consumer-detail
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: consumer-detail
+  template:
+    metadata:
+      labels:
+        app: consumer-detail
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+    spec:
+      containers:
+      - name: detail
+        image: jobharvestor-consumer:latest
+        command: ["python", "-m", "src.consumer"]
+        imagePullPolicy: Never
+        env:
+        - name: DB_HOST
+          value: "postgres"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: KAFKA_HOST
+          value: "kafka:9092"
+        - name: KAFKA_GROUP_ID
+          value: "detail-group"
         - name: DB_PASSWORD
-          value: "your_postgres_password"
+          value: ""
         - name: LOKI_URL
           value: "http://loki:3100/loki/api/v1/push"
         - name: OTLP_ENDPOINT

@@ -21,8 +21,8 @@ spec:
       - name: postgres
         image: postgres:15
         env:
-        - name: POSTGRES_PASSWORD
-          value: "your_postgres_password"
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: "trust"
         ports:
         - containerPort: 5432
 ---
@@ -105,7 +105,7 @@ spec:
         - name: REDIS_HOST
           value: "redis"
         - name: DB_PASSWORD
-          value: "your_postgres_password"
+          value: ""
         - name: LOKI_URL
           value: "http://loki:3100/loki/api/v1/push"
         - name: OTLP_ENDPOINT
@@ -134,41 +134,84 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: consumer
+  name: consumer-discovery
   labels:
-    app: consumer
+    app: consumer-discovery
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
-      app: consumer
+      app: consumer-discovery
   template:
     metadata:
       labels:
-        app: consumer
+        app: consumer-discovery
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8001"
+        prometheus.io/port: "8002"
     spec:
       containers:
-      - name: consumer
+      - name: discovery
         image: jobharvestor-consumer:latest
+        command: ["python", "-m", "src.discovery_consumer"]
         imagePullPolicy: Never
         env:
         - name: DB_HOST
           value: "postgres"
         - name: REDIS_HOST
           value: "redis"
-        - name: DB_PASSWORD
-          value: "your_postgres_password"
+        - name: KAFKA_HOST
+          value: "kafka:9092"
+        - name: KAFKA_GROUP_ID
+          value: "discovery-group"
         - name: LOKI_URL
           value: "http://loki:3100/loki/api/v1/push"
         - name: OTLP_ENDPOINT
           value: "http://jaeger:4318/v1/traces"
-        - name: BROKER_TYPE
-          value: "kafka"
+        ports:
+        - containerPort: 8002
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-detail
+  labels:
+    app: consumer-detail
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: consumer-detail
+  template:
+    metadata:
+      labels:
+        app: consumer-detail
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+    spec:
+      containers:
+      - name: detail
+        image: jobharvestor-consumer:latest
+        command: ["python", "-m", "src.consumer"]
+        imagePullPolicy: Never
+        env:
+        - name: DB_HOST
+          value: "postgres"
+        - name: REDIS_HOST
+          value: "redis"
         - name: KAFKA_HOST
           value: "kafka:9092"
+        - name: KAFKA_GROUP_ID
+          value: "detail-group"
+        - name: DB_PASSWORD
+          value: ""
+        - name: LOKI_URL
+          value: "http://loki:3100/loki/api/v1/push"
+        - name: OTLP_ENDPOINT
+          value: "http://jaeger:4318/v1/traces"
         ports:
         - containerPort: 8001
 ---
@@ -394,69 +437,112 @@ data:
     {
       "annotations": { "list": [] },
       "editable": true,
+      "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
+      "id": null,
+      "links": [],
       "panels": [
         {
-          "title": "Producer — Jobs Queued Rate",
+          "title": "Discovery — Listings Found Rate",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "rate(producer_jobs_queued_total[1m])", "legendFormat": "jobs/sec" }],
-          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }, "unit": "ops" }, "overrides": [] }
+          "targets": [
+            { "expr": "rate(discovery_listings_found_total[1m])", "legendFormat": "listings/sec" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 },
+              "unit": "ops"
+            }
+          }
         },
         {
-          "title": "Producer — Pages Processed vs Failed",
+          "title": "Discovery — Pages Processed vs Failed",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "rate(producer_pages_processed_total[1m])", "legendFormat": "processed/sec" },
-            { "expr": "rate(producer_pages_failed_total[1m])", "legendFormat": "failed/sec" }
+            { "expr": "rate(discovery_pages_processed_total[1m])", "legendFormat": "processed/sec" },
+            { "expr": "rate(discovery_pages_failed_total[1m])", "legendFormat": "failed/sec" }
           ],
-          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }, "unit": "ops" }, "overrides": [] }
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 },
+              "unit": "ops"
+            }
+          }
         },
         {
-          "title": "Producer — Scrape Duration (p50/p95/p99)",
+          "title": "Discovery — Scrape Duration (p50 / p95)",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "histogram_quantile(0.50, rate(producer_page_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
-            { "expr": "histogram_quantile(0.95, rate(producer_page_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p95" },
-            { "expr": "histogram_quantile(0.99, rate(producer_page_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p99" }
+            { "expr": "histogram_quantile(0.50, rate(discovery_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, rate(discovery_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p95" }
           ],
-          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "unit": "s" }, "overrides": [] }
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+              "unit": "s"
+            }
+          }
         },
         {
-          "title": "Consumer — Jobs Inserted Rate",
+          "title": "Detail — Jobs Inserted Rate",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "rate(consumer_jobs_inserted_total[1m])", "legendFormat": "inserted/sec" }],
-          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }, "unit": "ops" }, "overrides": [] }
+          "targets": [
+            { "expr": "rate(consumer_jobs_inserted_total[1m])", "legendFormat": "inserted/sec" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 },
+              "unit": "ops"
+            }
+          }
         },
         {
-          "title": "Consumer — Jobs Failed Rate",
+          "title": "Detail — Jobs Failed Rate",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "rate(consumer_jobs_failed_total[1m])", "legendFormat": "failed/sec" }],
-          "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }, "unit": "ops" }, "overrides": [] }
+          "targets": [
+            { "expr": "rate(consumer_jobs_failed_total[1m])", "legendFormat": "failed/sec" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "red" },
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 },
+              "unit": "ops"
+            }
+          }
         },
         {
-          "title": "Consumer — Job Scrape Duration (p50/p95/p99)",
+          "title": "Detail — Job Scrape Duration (p50 / p95)",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "histogram_quantile(0.50, rate(consumer_job_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
-            { "expr": "histogram_quantile(0.95, rate(consumer_job_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p95" },
-            { "expr": "histogram_quantile(0.99, rate(consumer_job_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p99" }
+            { "expr": "histogram_quantile(0.95, rate(consumer_job_scrape_duration_seconds_bucket[5m]))", "legendFormat": "p95" }
           ],
-          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "unit": "s" }, "overrides": [] }
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+              "unit": "s"
+            }
+          }
         },
         {
-          "title": "Consumer — Batch Duration (p50/p95)",
+          "title": "Pipeline Latency — Batch Duration (p50 / p95)",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -464,7 +550,13 @@ data:
             { "expr": "histogram_quantile(0.50, rate(consumer_batch_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
             { "expr": "histogram_quantile(0.95, rate(consumer_batch_duration_seconds_bucket[5m]))", "legendFormat": "p95" }
           ],
-          "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 }, "unit": "s" }, "overrides": [] }
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 },
+              "unit": "s"
+            }
+          }
         },
         {
           "title": "Active Browser Sessions",
@@ -472,39 +564,70 @@ data:
           "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "producer_active_browsers", "legendFormat": "Producer" },
-            { "expr": "sum(consumer_active_browsers)", "legendFormat": "Consumer" }
+            { "expr": "sum(discovery_active_browsers)", "legendFormat": "Discovery" },
+            { "expr": "sum(consumer_active_browsers)", "legendFormat": "Detail" }
           ],
-          "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 5 }] }, "min": 0, "max": 10 }, "overrides": [] }
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 5 },
+                  { "color": "red", "value": 15 }
+                ]
+              },
+              "min": 0,
+              "max": 20
+            }
+          }
         },
         {
-          "title": "Totals",
+          "title": "Pipeline Totals",
           "type": "stat",
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "producer_jobs_queued_total", "legendFormat": "Jobs Queued" },
-            { "expr": "consumer_jobs_inserted_total", "legendFormat": "Jobs Inserted" },
-            { "expr": "consumer_jobs_failed_total", "legendFormat": "Jobs Failed" },
-            { "expr": "consumer_batches_processed_total", "legendFormat": "Batches Done" }
+            { "expr": "discovery_listings_found_total", "legendFormat": "Listings Found" },
+            { "expr": "consumer_jobs_inserted_total", "legendFormat": "Details Saved" },
+            { "expr": "consumer_jobs_failed_total", "legendFormat": "Detail Failures" }
           ],
-          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "unit": "short"
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "reduceOptions": { "calcs": ["lastNotNull"] }
+          }
         },
         {
-          "title": "Live Logs",
+          "title": "Split Consumer Logs",
           "type": "logs",
           "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
           "datasource": { "type": "loki", "uid": "loki" },
-          "targets": [{ "expr": "{application=~\"jobharvestor-consumer|jobharvestor-producer\"}", "refId": "A" }],
-          "options": { "showTime": true, "sortOrder": "Descending", "enableLogDetails": true, "wrapLogMessage": true }
+          "targets": [
+            { "expr": "{application=~\"jobharvestor-consumer|jobharvestor-producer\"}", "refId": "A" }
+          ],
+          "options": {
+            "showTime": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true,
+            "wrapLogMessage": true
+          }
         }
       ],
       "schemaVersion": 39,
       "tags": ["jobharvestor"],
+      "templating": { "list": [] },
       "time": { "from": "now-30m", "to": "now" },
-      "title": "Job Harvestor",
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Job Harvestor Distributed",
       "uid": "jobharvestor-main",
-      "version": 1
+      "version": 2
     }
 ---
 apiVersion: apps/v1

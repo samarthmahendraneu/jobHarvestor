@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "21"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"api-dashboard"},"name":"api-dashboard","namespace":"default"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"api-dashboard"}},"template":{"metadata":{"annotations":{"prometheus.io/port":"8000","prometheus.io/scrape":"true"},"labels":{"app":"api-dashboard"}},"spec":{"containers":[{"command":["uvicorn","src.api:app","--host","0.0.0.0","--port","8080"],"env":[{"name":"DB_HOST","value":"postgres"},{"name":"REDIS_HOST","value":"redis"},{"name":"DB_PASSWORD","value":"your_postgres_password"},{"name":"LOKI_URL","value":"http://loki:3100/loki/api/v1/push"},{"name":"OTLP_ENDPOINT","value":"http://jaeger:4318/v1/traces"},{"name":"BROKER_TYPE","value":"kafka"},{"name":"KAFKA_HOST","value":"kafka:9092"}],"image":"jobharvestor-api:latest","imagePullPolicy":"Never","name":"api-dashboard","ports":[{"containerPort":8080}]}]}}}}
+  creationTimestamp: "2026-03-25T00:48:58Z"
+  generation: 21
+  labels:
+    app: api-dashboard
+  name: api-dashboard
+  namespace: default
+  resourceVersion: "12563"
+  uid: 2e599844-c12c-45a6-8ec5-03d210ea0322
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: api-dashboard
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "2026-03-25T00:15:51-04:00"
+        prometheus.io/port: "8000"
+        prometheus.io/scrape: "true"
+      labels:
+        app: api-dashboard
+    spec:
+      containers:
+      - command:
+        - uvicorn
+        - src.api:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8080"
+        env:
+        - name: DB_HOST
+          value: postgres
+        - name: REDIS_HOST
+          value: redis
+        - name: DB_PASSWORD
+          value: your_postgres_password
+        - name: LOKI_URL
+          value: http://loki:3100/loki/api/v1/push
+        - name: OTLP_ENDPOINT
+          value: http://jaeger:4318/v1/traces
+        - name: BROKER_TYPE
+          value: kafka
+        - name: KAFKA_HOST
+          value: kafka:9092
+        image: jobharvestor-api:latest
+        imagePullPolicy: Never
+        name: api-dashboard
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-03-25T03:45:13Z"
+    lastUpdateTime: "2026-03-25T03:45:13Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-03-25T00:48:58Z"
+    lastUpdateTime: "2026-03-25T04:15:54Z"
+    message: ReplicaSet "api-dashboard-69659685f" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 21
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0
+  updatedReplicas: 1

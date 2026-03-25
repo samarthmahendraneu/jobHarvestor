@@ -230,56 +230,98 @@
         <a href="/test" class="active">LLM Tester</a>
     </div>
 </div>
-
 <div class="hero">
     <h1>🧪 LLM Extraction Tester</h1>
-    <p>Paste a job listings URL. The AI will extract CSS selectors, scrape up to 10 listings, and fetch full job details — all in one run.</p>
+    <p>Choose a mode to test your extraction selectors. <strong>Listing mode</strong> finds job links on a results page, while <strong>Detail mode</strong> harvests fields from a specific JDP.</p>
 </div>
 
-<div class="input-section">
-    <input type="url" id="testUrl" placeholder="https://jobs.example.com/search?location=us&page=1" />
-    <button class="btn btn-run" id="runBtn" onclick="runTest()">🚀 Run Test</button>
-</div>
-
-<div class="status-bar" id="statusBar" style="display:none;"></div>
-
-<div class="results-grid" id="resultsGrid" style="display:none;">
-
-    <div class="panel">
+<div class="test-container">
+    <!-- Listings Test Card -->
+    <div class="panel test-card">
         <div class="panel-header">
-            <h3>Extracted CSS Selectors</h3>
-            <span class="badge badge-purple" id="selectorBadge">AI</span>
+            <h3>1. Listing Page Tester</h3>
+            <span class="badge badge-purple">Discovery</span>
         </div>
-        <div class="panel-body" id="selectorsPanel">
-            <div class="empty-state">No selectors yet.</div>
+        <div class="panel-body">
+            <p style="font-size: 12px; color: var(--text-sub); margin-bottom: 12px;">Input a career search/results URL to find all job links.</p>
+            <div style="display: flex; gap: 10px;">
+                <input type="url" id="listUrl" placeholder="https://jobs.example.com/search" style="flex:1; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: white; outline: none;" />
+                <button class="btn btn-run" id="listBtn" onclick="runListTest()" style="padding: 10px 20px;">Discovery</button>
+            </div>
+            <div id="listStatusBar" class="status-bar" style="display:none; margin-top: 15px; margin-left:0; margin-right:0;"></div>
+            <div id="listResults" style="margin-top: 20px; display:none;">
+                <div class="badge badge-purple" style="margin-bottom: 10px;">Listing Selectors</div>
+                <div id="listSelectors" style="background: var(--surface2); padding: 10px; border-radius: 6px; margin-bottom: 15px;"></div>
+                <div class="badge badge-green" style="margin-bottom: 10px;">Found Listings</div>
+                <div id="listItems" style="max-height: 300px; overflow-y: auto;"></div>
+            </div>
         </div>
     </div>
 
-    <div class="panel">
+    <!-- Details Test Card -->
+    <div class="panel test-card">
         <div class="panel-header">
-            <h3>Discovered Listings</h3>
-            <span class="badge badge-green" id="listingsBadge">0</span>
+            <h3>2. Detail Page Tester</h3>
+            <span class="badge badge-blue">Harvest</span>
         </div>
-        <div class="panel-body" id="listingsPanel">
-            <div class="empty-state">No listings yet.</div>
+        <div class="panel-body">
+            <p style="font-size: 12px; color: var(--text-sub); margin-bottom: 12px;">Input a specific job description URL to extract all data fields.</p>
+            <div style="display: flex; gap: 10px;">
+                <input type="url" id="detailUrl" placeholder="https://jobs.example.com/results/123-job-name" style="flex:1; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: white; outline: none;" />
+                <button class="btn btn-run" id="detailBtn" onclick="runDetailTest()" style="padding: 10px 20px; background: var(--primary);">Harvest</button>
+            </div>
+            <div id="detailStatusBar" class="status-bar" style="display:none; margin-top: 15px; margin-left:0; margin-right:0;"></div>
+            <div id="detailResults" style="margin-top: 20px; display:none;">
+                <div class="badge badge-blue" style="margin-bottom: 10px;">Detail Selectors</div>
+                <div id="detailSelectors" style="background: var(--surface2); padding: 10px; border-radius: 6px; margin-bottom: 15px;"></div>
+                <div class="badge badge-green" style="margin-bottom: 10px;">Extracted Data</div>
+                <div id="detailContent"></div>
+            </div>
         </div>
     </div>
-
-    <div class="panel details-grid">
+    <!-- Save Configuration Card -->
+    <div class="panel test-card" id="saveCard" style="grid-column: 1 / -1; min-height: auto; margin-top: 10px; display: none;">
         <div class="panel-header">
-            <h3>Job Details</h3>
-            <span class="badge badge-blue" id="detailsBadge">0 scraped</span>
+            <h3>3. Save Configuration</h3>
+            <span class="badge badge-green">Persist</span>
         </div>
-        <div class="panel-body" id="detailsPanel">
-            <div class="empty-state">No job details yet.</div>
+        <div class="panel-body">
+            <p style="font-size: 12px; color: var(--text-sub); margin-bottom: 12px;">Review and save your validated selectors to the dashboard.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <label class="detail-label">Company Name</label>
+                    <input type="text" id="saveName" placeholder="e.g. Google" style="width:100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: white; outline: none; margin-bottom: 10px;" />
+                    <label class="detail-label">Base Search URL</label>
+                    <input type="url" id="saveBaseUrl" placeholder="https://jobs.google.com/search" style="width:100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: white; outline: none;" />
+                </div>
+                <div style="background: var(--surface2); padding: 15px; border-radius: 8px;">
+                    <div id="saveSummary" style="font-size: 11px; color: var(--text-sub); line-height: 1.6;"></div>
+                </div>
+            </div>
+            <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; align-items: center;">
+                <div id="saveStatusBar" class="status-bar" style="display:none; margin:0; flex:1;"></div>
+                <button class="btn btn-run" id="saveBtn" onclick="saveToDatabase()" style="background: var(--green);">Save to Dashboard</button>
+            </div>
         </div>
     </div>
-
 </div>
+
+<style>
+    .test-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+        padding: 20px 40px 40px;
+    }
+    @media (max-width: 1000px) { .test-container { grid-template-columns: 1fr; } }
+    .test-card { min-height: 400px; }
+</style>
 
 <script>
-    function setStatus(msg, type='') {
-        const bar = document.getElementById('statusBar');
+    let masterSelectors = {};
+
+    function setStatus(barId, msg, type='') {
+        const bar = document.getElementById(barId);
         bar.style.display = 'flex';
         bar.className = 'status-bar ' + type;
         bar.innerHTML = type === 'running'
@@ -287,131 +329,159 @@
             : `<span>${msg}</span>`;
     }
 
-    function renderSelectors(selectors) {
-        const panel = document.getElementById('selectorsPanel');
-        const labels = {
-            job_list_selector: 'Job List Wrapper',
-            title_selector: 'Title (in wrapper)',
-            link_selector: 'Link (in wrapper)',
-            job_id_selector: 'Job ID',
-            job_title_selector: 'Job Title (detail)',
-            location_selector: 'Location',
-            department_selector: 'Department',
-            summary_selector: 'Summary',
-            long_description_selector: 'Description',
-            date_selector: 'Date Posted',
-        };
-        const entries = Object.entries(selectors);
-        if (!entries.length) { panel.innerHTML = '<div class="empty-state">No selectors returned.</div>'; return; }
-        panel.innerHTML = entries.map(([k, v]) => `
-            <div class="selector-row">
-                <span class="selector-key">${labels[k] || k}</span>
-                <span class="selector-val">${v || '—'}</span>
-            </div>
-        `).join('');
-    }
+    async function runListTest() {
+        const url = document.getElementById('listUrl').value.trim();
+        if (!url) return;
+        
+        const btn = document.getElementById('listBtn');
+        btn.disabled = true;
+        setStatus('listStatusBar', 'Analyzing Listings...', 'running');
+        document.getElementById('listResults').style.display = 'none';
 
-    function renderListings(listings) {
-        const panel = document.getElementById('listingsPanel');
-        document.getElementById('listingsBadge').innerText = listings.length;
-        if (!listings.length) { panel.innerHTML = '<div class="empty-state">No listings found.</div>'; return; }
-        panel.innerHTML = listings.map((j, i) => `
-            <div class="listing-item">
-                <div class="listing-title">${i+1}. ${j.title || '(no title)'}</div>
-                <div class="listing-url"><a href="${j.href}" target="_blank">${j.href || '—'}</a></div>
-            </div>
-        `).join('');
-    }
+        try {
+            const res = await fetch('/api/test-listings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url})
+            });
+            const json = await res.json();
+            if (json.error) {
+                setStatus('listStatusBar', 'Error: ' + json.error, 'error');
+            } else {
+                setStatus('listStatusBar', `Success! Found ${json.data.listings.length} jobs.`, 'success');
+                document.getElementById('listResults').style.display = 'block';
+                
+                // Merge into master
+                masterSelectors = {...masterSelectors, ...json.data.selectors};
+                showSaveCard();
 
-    function renderDetails(details) {
-        const panel = document.getElementById('detailsPanel');
-        document.getElementById('detailsBadge').innerText = `${details.length} scraped`;
-        if (!details.length) { panel.innerHTML = '<div class="empty-state">No job details returned.</div>'; return; }
+                // Render Selectors
+                document.getElementById('listSelectors').innerHTML = Object.entries(json.data.selectors).map(([k,v]) => `
+                    <div class="selector-row"><span class="selector-key">${k}</span><span class="selector-val">${v}</span></div>
+                `).join('');
 
-        panel.innerHTML = details.map(d => {
-            if (d.error) return `
-                <div class="job-card">
-                    <div class="job-card-header">
-                        <h4>${d.listing_title || d.url}</h4>
-                        <span style="color:#f87171; font-size:12px">Error</span>
+                // Render Listings
+                document.getElementById('listItems').innerHTML = json.data.listings.map((l, i) => `
+                    <div class="listing-item">
+                        <div class="listing-title">${i+1}. ${l.title || '(no title)'}</div>
+                        <div class="listing-url"><a href="${l.href}" target="_blank">${l.href}</a></div>
+                        <button class="btn" onclick="copyToDetail('${l.href}')" style="font-size:10px; padding:4px 8px; margin-top:4px; background:var(--surface)">Use for Detail Test</button>
                     </div>
-                    <div class="job-card-body"><div class="error-msg">${d.error}</div></div>
-                </div>`;
+                `).join('');
+            }
+        } catch(e) { setStatus('listStatusBar', 'Failed: ' + e.message, 'error'); }
+        btn.disabled = false;
+    }
 
-            return `
-            <div class="job-card">
-                <div class="job-card-header">
-                    <h4>${d.title || d.listing_title || '(no title)'}</h4>
-                    <div class="job-card-url"><a href="${d.url}" target="_blank">${d.url}</a></div>
-                </div>
-                <div class="job-card-body">
-                    ${field('Job ID', d.job_id)}
-                    ${field('Location', d.location)}
-                    ${field('Department', d.department)}
-                    ${field('Date', d.date)}
-                    ${fieldLong('Summary', d.summary)}
-                    ${fieldLong('Description', d.long_description)}
-                </div>
-            </div>`;
-        }).join('');
+    async function runDetailTest() {
+        const url = document.getElementById('detailUrl').value.trim();
+        if (!url) return;
+        
+        const btn = document.getElementById('detailBtn');
+        btn.disabled = true;
+        setStatus('detailStatusBar', 'Harvesting Details...', 'running');
+        document.getElementById('detailResults').style.display = 'none';
+
+        try {
+            const res = await fetch('/api/test-details', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url})
+            });
+            const json = await res.json();
+            if (json.error) {
+                setStatus('detailStatusBar', 'Error: ' + json.error, 'error');
+            } else {
+                setStatus('detailStatusBar', `Success! Data extracted.`, 'success');
+                document.getElementById('detailResults').style.display = 'block';
+                
+                // Merge into master
+                masterSelectors = {...masterSelectors, ...json.data.selectors};
+                showSaveCard();
+
+                // Render Selectors
+                document.getElementById('detailSelectors').innerHTML = Object.entries(json.data.selectors).map(([k,v]) => `
+                    <div class="selector-row"><span class="selector-key">${k}</span><span class="selector-val">${v}</span></div>
+                `).join('');
+
+                // Render Data
+                const d = json.data.job_details[0];
+                document.getElementById('detailContent').innerHTML = `
+                    <div class="job-card">
+                        <div class="job-card-header"><h4>${d.title || 'Untitled'}</h4></div>
+                        <div class="job-card-body">
+                            ${field('ID', d.job_id)}
+                            ${field('Location', d.location)}
+                            ${field('Department', d.department)}
+                            ${field('Date', d.date)}
+                            ${fieldLong('Summary', d.summary)}
+                            ${fieldLong('Description', d.long_description)}
+                        </div>
+                    </div>
+                `;
+            }
+        } catch(e) { setStatus('detailStatusBar', 'Failed: ' + e.message, 'error'); }
+        btn.disabled = false;
+    }
+
+    function showSaveCard() {
+        document.getElementById('saveCard').style.display = 'block';
+        if (!document.getElementById('saveBaseUrl').value) {
+            document.getElementById('saveBaseUrl').value = document.getElementById('listUrl').value;
+        }
+        
+        const summary = Object.entries(masterSelectors)
+            .map(([k,v]) => `<div style="display:flex; justify-content:space-between;"><b>${k}:</b> <span style="font-family:monospace; color:#93c5fd; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-left:10px;">${v || 'none'}</span></div>`)
+            .join('');
+        document.getElementById('saveSummary').innerHTML = `<strong>Final Selectors:</strong><br/>` + summary;
+    }
+
+    async function saveToDatabase() {
+        const name = document.getElementById('saveName').value.trim();
+        const baseUrl = document.getElementById('saveBaseUrl').value.trim();
+        if (!name || !baseUrl) {
+            setStatus('saveStatusBar', 'Name and Base URL required', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true;
+        setStatus('saveStatusBar', 'Saving...', 'running');
+
+        const payload = {
+            company_name: name,
+            base_url: baseUrl,
+            ...masterSelectors
+        };
+
+        try {
+            const res = await fetch('/api/companies', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const json = await res.json();
+            if (json.status === 'success') {
+                setStatus('saveStatusBar', 'Successfully saved to Database!', 'success');
+                setTimeout(() => { window.location.href = '/'; }, 1500);
+            } else {
+                setStatus('saveStatusBar', 'Error: ' + (json.error || 'Unknown error'), 'error');
+            }
+        } catch(e) { setStatus('saveStatusBar', 'Failed: ' + e.message, 'error'); }
+        btn.disabled = false;
+    }
+
+    function copyToDetail(url) {
+        document.getElementById('detailUrl').value = url;
+        window.scrollTo({ top: document.getElementById('detailUrl').offsetTop - 100, behavior: 'smooth' });
     }
 
     function field(label, val) {
-        return `<div class="detail-field">
-            <div class="detail-label">${label}</div>
-            <div class="detail-value">${val || '—'}</div>
-        </div>`;
+        return `<div class="detail-field"><div class="detail-label">${label}</div><div class="detail-value">${val || '—'}</div></div>`;
     }
     function fieldLong(label, val) {
-        return `<div class="detail-field full-width">
-            <div class="detail-label">${label}</div>
-            <div class="detail-value long">${val || '—'}</div>
-        </div>`;
+        return `<div class="detail-field full-width"><div class="detail-label">${label}</div><div class="detail-value long">${val || '—'}</div></div>`;
     }
-
-    async function runTest() {
-        const url = document.getElementById('testUrl').value.trim();
-        if (!url) { alert('Please enter a URL.'); return; }
-
-        const btn = document.getElementById('runBtn');
-        btn.disabled = true;
-        btn.innerText = '⏳ Running...';
-
-        document.getElementById('resultsGrid').style.display = 'none';
-        setStatus('Running... This may take up to 5 minutes. Chrome is navigating and GPT-4o is analyzing the DOM.', 'running');
-
-        try {
-            const res = await fetch('/api/test-extract', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({url}),
-                signal: AbortSignal.timeout(310000) // 5m10s browser-side timeout
-            });
-
-            const json = await res.json();
-
-            if (json.error) {
-                setStatus('Error: ' + json.error, 'error');
-            } else {
-                const data = json.data;
-                setStatus(`Done! Found ${data.listings.length} listings, scraped ${data.job_details.length} job detail pages.`, 'success');
-
-                document.getElementById('resultsGrid').style.display = 'grid';
-                renderSelectors(data.selectors || {});
-                renderListings(data.listings || []);
-                renderDetails(data.job_details || []);
-            }
-        } catch(e) {
-            setStatus('Request failed: ' + e.message, 'error');
-        }
-
-        btn.disabled = false;
-        btn.innerText = '🚀 Run Test';
-    }
-
-    document.getElementById('testUrl').addEventListener('keydown', e => {
-        if (e.key === 'Enter') runTest();
-    });
 </script>
 
 </body>

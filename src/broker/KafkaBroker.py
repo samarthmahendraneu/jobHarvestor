@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 class KafkaBroker(MessageBroker):
     def __init__(self):
-        self.kafka_host = os.getenv('KAFKA_HOST', 'localhost:9092')
+        self.kafka_host = os.getenv('KAFKA_HOST', 'kafka:9092')
         self.group_id = os.getenv('KAFKA_GROUP_ID', 'jobharvestor-consumers')
 
         self.producer_conf = {'bootstrap.servers': self.kafka_host}

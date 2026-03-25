@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -8,6 +9,12 @@ import uvicorn
 from contextlib import asynccontextmanager
 
 from src.Database.database import Database
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("api-dashboard")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -97,10 +104,6 @@ async def test_page(request: Request):
 async def generate_selectors(req: SelectorRequest):
     try:
         from src.llm_extractor import extract_css_selectors
-        import os
-        if not os.getenv("OPENAI_API_KEY"):
-            return {"error": "OPENAI_API_KEY is missing. Export it to your environment."}
-        
         selectors = await extract_css_selectors(req.url)
         return {"status": "success", "selectors": selectors}
     except Exception as e:
@@ -108,68 +111,98 @@ async def generate_selectors(req: SelectorRequest):
 
 @app.post("/api/test-extract")
 async def test_extract(req: SelectorRequest):
-    """
-    Synchronous test endpoint that:
-    1. Runs LLM CSS extraction on the given URL
-    2. Scrapes up to 10 job listings using those selectors
-    3. Visits each listing and extracts full job details
-    Returns everything in one response (5 min timeout).
-    """
     import asyncio
-    import json
-    from urllib.parse import urljoin
+    from urllib.parse import urljoin, urlparse
 
-    if not os.getenv("OPENAI_API_KEY"):
-        return {"error": "OPENAI_API_KEY is missing."}
+    def normalize_url(current_url: str, href: str) -> str:
+        if not href:
+            return ""
+        href = href.strip()
+        if href.startswith(("http://", "https://")):
+            return href
+        if href.startswith("//"):
+            parsed = urlparse(current_url)
+            return f"{parsed.scheme}:{href}"
+        
+        joined = urljoin(current_url, href)
+        
+        # De-duplicate common path segments that often get doubled up by urljoin
+        # e.g. .../jobs/ + jobs/results -> .../jobs/jobs/results
+        parsed_joined = urlparse(joined)
+        path_parts = parsed_joined.path.split("/")
+        clean_parts = []
+        for i, part in enumerate(path_parts):
+            if i > 0 and part and part == path_parts[i-1] and part in ("jobs", "results", "careers", "about"):
+                continue
+            clean_parts.append(part)
+        
+        new_path = "/".join(clean_parts)
+        return f"{parsed_joined.scheme}://{parsed_joined.netloc}{new_path}"
 
     try:
         async def run_test():
-            from src.llm_extractor import extract_css_selectors, get_condensed_html
+            from src.llm_extractor import extract_css_selectors
             from src.stealth import prepare_stealth_page
             from pyppeteer import launch
 
-            chrome_path = os.getenv('CHROME_PATH', '/usr/bin/chromium')
             browser = await launch(
                 headless=True,
-                executablePath=chrome_path,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-                      '--disable-blink-features=AutomationControlled']
+                executablePath=os.getenv('CHROME_PATH', '/usr/bin/chromium'),
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-blink-features=AutomationControlled'
+                ]
             )
 
-            results = {"selectors": {}, "listings": [], "job_details": []}
-
             try:
-                # Step 1: LLM extraction to get selectors
+                # 1. Get Selectors
+                logger.info(f"--- [API TEST-EXTRACT] Starting for {req.url} ---")
                 selectors = await extract_css_selectors(req.url)
-                results["selectors"] = selectors
-
                 jls = selectors.get("job_list_selector", "")
                 title_sel = selectors.get("title_selector", "")
                 link_sel = selectors.get("link_selector", "")
 
                 if not jls:
-                    return results
+                    logger.warning("No job_list_selector found in results.")
+                    return {"error": "No job_list_selector found", "selectors": selectors}
 
-                # Step 2: Re-navigate to listing page and scrape up to 10 jobs
+                # 2. Load list page
+                logger.info(f"Loading listing page in stealth mode: {req.url}")
                 page = await prepare_stealth_page(browser)
                 await page.goto(req.url, {'waitUntil': 'networkidle0', 'timeout': 60000})
                 await asyncio.sleep(3)
+                
+                base_page_url = page.url 
+                logger.info(f"List page loaded. Final URL: {base_page_url}")
 
-                raw_jobs = await page.evaluate(f'''() => {{
-                    const items = Array.from(document.querySelectorAll("{jls}")).slice(0, 10);
-                    return items.map(el => {{
-                        const titleEl = el.querySelector("{title_sel}") || el;
-                        const linkEl = el.querySelector("{link_sel}") || el.querySelector("a") || el;
-                        return {{
-                            title: titleEl ? titleEl.innerText.trim() : "",
-                            href: linkEl ? (linkEl.getAttribute("href") || linkEl.href || "") : ""
-                        }};
-                    }});
-                }}''')
+                # 3. Get first job
+                logger.info("Extracting first job data from list...")
+                job = await page.evaluate("""(jls, title_sel, link_sel) => {
+                    const el = document.querySelector(jls);
+                    if (!el) return null;
+                    const titleEl = title_sel ? (el.querySelector(title_sel) || el) : el;
+                    const linkEl = link_sel ? (el.querySelector(link_sel) || el.querySelector('a')) : el.querySelector('a');
+                    return {
+                        title: titleEl ? titleEl.innerText.trim() : el.innerText.trim(),
+                        href: linkEl ? (linkEl.getAttribute("href") || linkEl.href || "") : ""
+                    };
+                }""", jls, title_sel, link_sel)
 
-                results["listings"] = raw_jobs
+                if not job or not job.get("href"):
+                    logger.error("Failed to find even one job/link on the list page.")
+                    return {"error": "No jobs found with those selectors", "selectors": selectors}
 
-                # Step 3: Visit each listing and extract details
+                job_url = normalize_url(base_page_url, job["href"])
+                logger.info(f"Targeting detail page: {job_url}")
+
+                # 4. Scrape details
+                detail_page = await prepare_stealth_page(browser)
+                logger.info("Navigating to detail page...")
+                await detail_page.goto(job_url, {'waitUntil': 'networkidle0', 'timeout': 60000})
+                await asyncio.sleep(3)
+
                 detail_sels = {
                     "job_id": selectors.get("job_id_selector", ""),
                     "title": selectors.get("job_title_selector", ""),
@@ -180,46 +213,39 @@ async def test_extract(req: SelectorRequest):
                     "date": selectors.get("date_selector", ""),
                 }
 
-                for job in raw_jobs[:1]:
-                    href = job.get("href", "")
-                    if not href:
+                detail = {"url": job_url, "listing_title": job["title"]}
+                logger.info(f"Applying detail selectors: {detail_sels}")
+                for field, sel in detail_sels.items():
+                    if not sel:
+                        detail[field] = ""
                         continue
-                    full_url = urljoin(req.url, href)
                     try:
-                        detail_page = await prepare_stealth_page(browser)
-                        await detail_page.goto(full_url, {'waitUntil': 'networkidle0', 'timeout': 60000})
-                        await asyncio.sleep(3)
+                        val = await detail_page.evaluate("""(selector) => {
+                            const el = document.querySelector(selector);
+                            return el ? el.innerText.trim() : "";
+                        }""", sel)
+                        detail[field] = val
+                    except:
+                        detail[field] = ""
+                
+                logger.info(f"Extraction complete for: {job_url}")
+                await detail_page.close()
+                await page.close()
 
-                        detail = {"url": full_url, "listing_title": job.get("title", "")}
-                        for field, sel in detail_sels.items():
-                            if not sel:
-                                detail[field] = ""
-                                continue
-                            try:
-                                val = await detail_page.evaluate(f'''() => {{
-                                    const el = document.querySelector("{sel}");
-                                    return el ? el.innerText.trim() : "";
-                                }}''')
-                                detail[field] = val
-                            except Exception:
-                                detail[field] = ""
-
-                        results["job_details"].append(detail)
-                        await detail_page.close()
-                    except Exception as e:
-                        results["job_details"].append({"url": full_url, "error": str(e)})
+                return {
+                    "selectors": selectors,
+                    "listings": [{"title": job["title"], "href": job["href"]}],
+                    "job_details": [detail]
+                }
 
             finally:
                 await browser.close()
 
-            return results
-
-        # Run with 5 minute hard timeout
-        result = await asyncio.wait_for(run_test(), timeout=300)
+        result = await asyncio.wait_for(run_test(), timeout=180)
         return {"status": "success", "data": result}
 
     except asyncio.TimeoutError:
-        return {"error": "Test timed out after 5 minutes."}
+        return {"error": "Timed out after 3 minutes."}
     except Exception as e:
         return {"error": str(e)}
 
@@ -229,7 +255,6 @@ async def get_logs():
     import urllib.parse
     import json
     try:
-        # Query Loki for the last 50 logs of our app
         query = '{application=~"jobharvestor-consumer|jobharvestor-producer"}'
         url = f'http://loki:3100/loki/api/v1/query_range?query={urllib.parse.quote(query)}&limit=50'
         req = urllib.request.Request(url)
@@ -239,7 +264,6 @@ async def get_logs():
             for stream in data.get('data', {}).get('result', []):
                 for val in stream.get('values', []):
                     lines.append(val[1])
-            # Return reversed so newest is on top
             return {"logs": lines[::-1][:50]}
     except Exception as e:
         return {"logs": [f"Waiting for logs... (or Loki not reachable: {e})"]}
@@ -252,15 +276,13 @@ async def get_stats():
     
     try:
         broker = get_broker()
-        # Natively peel the Redis raw socket to check queue length without breaching the Interface
         if broker.__class__.__name__ == "RedisBroker":
             queue_len = broker.r.llen("jobs")
         else:
-            queue_len = 0 # Kafka manages its own consumer lags
+            queue_len = 0
     except Exception:
         queue_len = 0
     
-    # Query Jaeger for recent traces to show scraping speeds
     traces = []
     try:
         url = "http://jaeger:16686/api/traces?service=jobharvestor-consumer&limit=5"
@@ -276,4 +298,4 @@ async def get_stats():
     return {"queue_length": queue_len, "recent_traces": traces}
 
 if __name__ == "__main__":
-    uvicorn.run("src.api:app", host="0.0.0.0", port=8080, reload=True)
+    uvicorn.run("src.api:app", host="0.0.0.0", port=8090, reload=True)

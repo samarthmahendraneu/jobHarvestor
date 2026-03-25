@@ -100,16 +100,18 @@ async def scrape_job_details_on_page(page, payload: ScraperPayload, broker):
             long_desc = await get_inner_text(page, payload.long_description)
             date_val = await get_inner_text(page, payload.date)
 
+            logger.info(f"[SCRAPER] Extracted for {payload.url}: ID='{job_id}', Title='{title}', Loc='{location}'")
+
             from src.Database.database import Database
             db = Database()
             query = """
                 INSERT INTO job_details(job_id, title, location, department, summary, long_description, date, url)
-                VALUES(%s, %s, %s, %s, %s, %s, %s,%s)
-                ON CONFLICT (job_id) DO NOTHING
+                VALUES(%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (url) DO NOTHING
             """
             params = (job_id, title, location, department, summary, long_desc, date_val, payload.url)
             
-            logger.info(f"[CONSUMER -> POSTGRES] Insert: ID={job_id} | Title='{title}' | Loc='{location}' | Dept='{department}' | Date='{date_val}'")
+            logger.info(f"[CONSUMER -> POSTGRES] Attempting insert for URL: {payload.url}")
             db.insert_query(query, params)
             
             JOBS_INSERTED.inc()

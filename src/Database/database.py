@@ -161,10 +161,11 @@ def _init_db():
         cur.execute("SELECT version();")
         print("DB connected:", cur.fetchone()[0][:30])
 
-        # job_details table
+        # 1. New job_details schema
         cur.execute("""
         CREATE TABLE IF NOT EXISTS job_details(
-            job_id VARCHAR(255) PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
+            job_id VARCHAR(255),
             title VARCHAR(255),
             location VARCHAR(255),
             department VARCHAR(255),
@@ -172,11 +173,31 @@ def _init_db():
             long_description TEXT,
             date DATE,
             end_date DATE DEFAULT NULL,
-            url VARCHAR(255)
+            url VARCHAR(512) UNIQUE NOT NULL
         );
         """)
 
-        # companies_config table + seed
+        # 2. Migration for existing installations that used job_id as PK
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='job_details' AND column_name='id';")
+        if not cur.fetchone():
+            print("Migrating existing job_details table to new schema...")
+            try:
+                # Remove the old primary key constraint (which was on job_id)
+                # Note: Constraint name is usually 'job_details_pkey'
+                cur.execute("ALTER TABLE job_details DROP CONSTRAINT IF EXISTS job_details_pkey;")
+                # Add the new SERIAL primary key
+                cur.execute("ALTER TABLE job_details ADD COLUMN id SERIAL PRIMARY KEY;")
+                # Make job_id nullable
+                cur.execute("ALTER TABLE job_details ALTER COLUMN job_id DROP NOT NULL;")
+                # Ensure URL is unique
+                cur.execute("ALTER TABLE job_details ADD CONSTRAINT job_details_url_key UNIQUE (url);")
+                print("Migration successful.")
+            except Exception as migrate_err:
+                print(f"Migration failed (it might have already been done): {migrate_err}")
+                conn.rollback()
+                # If migration failed, we might need a fresh start or it already exists.
+
+        # 3. companies_config table
         cur.execute("""
         CREATE TABLE IF NOT EXISTS companies_config (
             id SERIAL PRIMARY KEY,

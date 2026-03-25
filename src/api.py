@@ -9,9 +9,6 @@ from contextlib import asynccontextmanager
 
 from src.Database.database import Database
 
-# --- We will import start_harvest from producer once we refactor it ---
-from src.producer import start_harvest_for_company
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Setup the tables on startup and close on shutdown if necessary
@@ -87,9 +84,12 @@ async def run_harvest(company_id: int):
     
     config = dict(row)
     
-    # Trigger the background task without blocking the API
-    asyncio.create_task(start_harvest_for_company(config))
-    return {"status": "started", "message": f"Harvest started in background for {config['company_name']}"}
+    # Publish to harvest-requests topic — producer pods pick this up independently
+    import json
+    from src.broker import get_broker
+    broker = get_broker()
+    broker.produce("harvest-requests", json.dumps(config, default=str))
+    return {"status": "started", "message": f"Harvest request queued for {config['company_name']}"}
 
 class SelectorRequest(BaseModel):
     url: str

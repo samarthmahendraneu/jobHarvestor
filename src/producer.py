@@ -201,8 +201,6 @@ async def start_harvest_for_company(config: dict):
     logger.info(f"Starting harvest for {config.get('company_name')}")
     base_url = config.get("base_url", "")
     
-    # We assume 'page=' pagination or similar. This can be adapted 
-    # to be smarter later, but for now we loop standard Apple-style indexes (0 to 10) for demo
     queue = [
         ScraperPayload(
             url=f"{base_url}&page={i}" if "?" in base_url else f"{base_url}?page={i}",
@@ -211,7 +209,7 @@ async def start_harvest_for_company(config: dict):
             link_selector=config.get('link_selector', ''),
             raw_config=config
         )
-        for i in range(10) # 10 pages max for now so it doesn't run forever
+        for i in range(10)
     ]
 
     batch_size = 5
@@ -222,29 +220,42 @@ async def start_harvest_for_company(config: dict):
         logger.info(f"Batch {i // batch_size + 1} completed.")
         await asyncio.sleep(5) 
 
-# Backwards compatibility to run locally
+
 async def main():
     try:
         start_http_server(8000)
     except Exception:
-        pass # Already started
-    
-    # Mock config matching Apple
-    config = {
-        "company_name": "Apple",
-        "base_url": "https://jobs.apple.com/en-us/search?location=united-states-USA",
-        "job_list_selector": "div.job-list-item",
-        "title_selector": "h3 a",
-        "link_selector": "h3 a",
-        "job_id_selector": "#jobdetails-jobnumber",
-        "job_title_selector": "#jobdetails-postingtitle",
-        "location_selector": "#jobdetails-joblocation",
-        "department_selector": "#jobdetails-teamname",
-        "summary_selector": "#jobdetails-jobdetails-jobsummary-content-row > span",
-        "long_description_selector": "#jobdetails-jobdetails-jobdescription-content-row > span",
-        "date_selector": "#jobdetails-jobpostdate"
-    }
-    await start_harvest_for_company(config)
+        pass
+
+    from src.broker import get_broker
+    broker = get_broker()
+
+    logger.info("Producer daemon started. Waiting for harvest-requests...")
+
+    while True:
+        try:
+            messages = broker.consume("harvest-requests", batch_size=1)
+            
+            if not messages:
+                await asyncio.sleep(3)
+                continue
+
+            for msg in messages:
+                try:
+                    config = json.loads(msg)
+                    logger.info(f"Received harvest request for: {config.get('company_name')}")
+                    await start_harvest_for_company(config)
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid harvest request: {msg}")
+
+        except Exception as e:
+            logger.error(f"Producer loop error: {e}")
+            await asyncio.sleep(5)
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Producer shutting down.")
+

@@ -94,6 +94,10 @@ async def run_harvest(company_id: int):
 class SelectorRequest(BaseModel):
     url: str
 
+@app.get("/test", response_class=HTMLResponse)
+async def test_page(request: Request):
+    return templates.TemplateResponse(request=request, name="test.html")
+
 @app.post("/api/generate-selectors")
 async def generate_selectors(req: SelectorRequest):
     try:
@@ -104,6 +108,123 @@ async def generate_selectors(req: SelectorRequest):
         
         selectors = await extract_css_selectors(req.url)
         return {"status": "success", "selectors": selectors}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/test-extract")
+async def test_extract(req: SelectorRequest):
+    """
+    Synchronous test endpoint that:
+    1. Runs LLM CSS extraction on the given URL
+    2. Scrapes up to 10 job listings using those selectors
+    3. Visits each listing and extracts full job details
+    Returns everything in one response (5 min timeout).
+    """
+    import asyncio
+    import json
+    from urllib.parse import urljoin
+
+    if not os.getenv("OPENAI_API_KEY"):
+        return {"error": "OPENAI_API_KEY is missing."}
+
+    try:
+        async def run_test():
+            from src.llm_extractor import extract_css_selectors, get_condensed_html
+            from src.stealth import prepare_stealth_page
+            from pyppeteer import launch
+
+            chrome_path = os.getenv('CHROME_PATH', '/usr/bin/chromium')
+            browser = await launch(
+                headless=True,
+                executablePath=chrome_path,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+                      '--disable-blink-features=AutomationControlled']
+            )
+
+            results = {"selectors": {}, "listings": [], "job_details": []}
+
+            try:
+                # Step 1: LLM extraction to get selectors
+                selectors = await extract_css_selectors(req.url)
+                results["selectors"] = selectors
+
+                jls = selectors.get("job_list_selector", "")
+                title_sel = selectors.get("title_selector", "")
+                link_sel = selectors.get("link_selector", "")
+
+                if not jls:
+                    return results
+
+                # Step 2: Re-navigate to listing page and scrape up to 10 jobs
+                page = await prepare_stealth_page(browser)
+                await page.goto(req.url, {'waitUntil': 'networkidle0', 'timeout': 60000})
+                await asyncio.sleep(3)
+
+                raw_jobs = await page.evaluate(f'''() => {{
+                    const items = Array.from(document.querySelectorAll("{jls}")).slice(0, 10);
+                    return items.map(el => {{
+                        const titleEl = el.querySelector("{title_sel}") || el;
+                        const linkEl = el.querySelector("{link_sel}") || el.querySelector("a") || el;
+                        return {{
+                            title: titleEl ? titleEl.innerText.trim() : "",
+                            href: linkEl ? (linkEl.getAttribute("href") || linkEl.href || "") : ""
+                        }};
+                    }});
+                }}''')
+
+                results["listings"] = raw_jobs
+
+                # Step 3: Visit each listing and extract details
+                detail_sels = {
+                    "job_id": selectors.get("job_id_selector", ""),
+                    "title": selectors.get("job_title_selector", ""),
+                    "location": selectors.get("location_selector", ""),
+                    "department": selectors.get("department_selector", ""),
+                    "summary": selectors.get("summary_selector", ""),
+                    "long_description": selectors.get("long_description_selector", ""),
+                    "date": selectors.get("date_selector", ""),
+                }
+
+                for job in raw_jobs[:1]:
+                    href = job.get("href", "")
+                    if not href:
+                        continue
+                    full_url = urljoin(req.url, href)
+                    try:
+                        detail_page = await prepare_stealth_page(browser)
+                        await detail_page.goto(full_url, {'waitUntil': 'networkidle0', 'timeout': 60000})
+                        await asyncio.sleep(3)
+
+                        detail = {"url": full_url, "listing_title": job.get("title", "")}
+                        for field, sel in detail_sels.items():
+                            if not sel:
+                                detail[field] = ""
+                                continue
+                            try:
+                                val = await detail_page.evaluate(f'''() => {{
+                                    const el = document.querySelector("{sel}");
+                                    return el ? el.innerText.trim() : "";
+                                }}''')
+                                detail[field] = val
+                            except Exception:
+                                detail[field] = ""
+
+                        results["job_details"].append(detail)
+                        await detail_page.close()
+                    except Exception as e:
+                        results["job_details"].append({"url": full_url, "error": str(e)})
+
+            finally:
+                await browser.close()
+
+            return results
+
+        # Run with 5 minute hard timeout
+        result = await asyncio.wait_for(run_test(), timeout=300)
+        return {"status": "success", "data": result}
+
+    except asyncio.TimeoutError:
+        return {"error": "Test timed out after 5 minutes."}
     except Exception as e:
         return {"error": str(e)}
 

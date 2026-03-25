@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Extraction Tester — Job Harvestor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface2: #162032;
+            --primary: #3b82f6;
+            --purple: #a855f7;
+            --green: #10b981;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --border: rgba(255,255,255,0.08);
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; background: var(--bg); color: var(--text-main); font-family: 'Inter', sans-serif; }
+
+        .header {
+            padding: 18px 40px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h2 { margin: 0; font-size: 18px; }
+        .nav-links { display: flex; gap: 20px; }
+        .nav-links a { color: var(--text-sub); text-decoration: none; font-size: 14px; font-weight: 600; }
+        .nav-links a:hover { color: var(--text-main); }
+        .nav-links a.active { color: var(--purple); }
+
+        .hero {
+            padding: 40px 40px 0;
+        }
+        .hero h1 { margin: 0 0 8px; font-size: 28px; }
+        .hero p { margin: 0; color: var(--text-sub); font-size: 14px; }
+
+        .input-section {
+            padding: 30px 40px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .input-section input[type=url] {
+            flex: 1;
+            padding: 14px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            outline: none;
+            transition: border 0.2s;
+        }
+        .input-section input[type=url]:focus { border-color: var(--purple); }
+        .input-section input[type=url]::placeholder { color: var(--text-sub); }
+
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: filter 0.2s, transform 0.1s;
+            white-space: nowrap;
+        }
+        .btn:hover { filter: brightness(1.15); }
+        .btn:active { transform: scale(0.97); }
+        .btn-run { background: var(--purple); color: white; }
+        .btn-run:disabled { background: #4b3072; cursor: not-allowed; filter: none; }
+
+        .status-bar {
+            margin: 0 40px;
+            padding: 14px 20px;
+            border-radius: 8px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            font-size: 13px;
+            color: var(--text-sub);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-bar.running { border-color: var(--purple); color: var(--purple); }
+        .status-bar.success { border-color: var(--green); color: var(--green); }
+        .status-bar.error { border-color: #ef4444; color: #ef4444; }
+        .spinner {
+            width: 14px; height: 14px;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .results-grid {
+            padding: 24px 40px 40px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        @media (max-width: 1100px) { .results-grid { grid-template-columns: 1fr; } }
+
+        .panel {
+            background: var(--surface);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .panel-header h3 { margin: 0; font-size: 14px; font-weight: 600; }
+        .badge {
+            font-size: 11px;
+            padding: 3px 9px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .badge-purple { background: rgba(168,85,247,0.15); color: var(--purple); }
+        .badge-green { background: rgba(16,185,129,0.15); color: var(--green); }
+        .badge-blue { background: rgba(59,130,246,0.15); color: var(--primary); }
+
+        .panel-body { padding: 16px 20px; }
+
+        /* Selectors panel */
+        .selector-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+            font-size: 13px;
+        }
+        .selector-row:last-child { border-bottom: none; }
+        .selector-key { color: var(--text-sub); font-weight: 600; flex-shrink: 0; }
+        .selector-val {
+            font-family: monospace;
+            color: #93c5fd;
+            word-break: break-all;
+            text-align: right;
+        }
+
+        /* Listings panel */
+        .listing-item {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+        .listing-item:last-child { border-bottom: none; }
+        .listing-title { font-weight: 600; color: var(--text-main); margin-bottom: 4px; }
+        .listing-url { color: var(--text-sub); font-size: 11px; word-break: break-all; }
+        .listing-url a { color: #60a5fa; text-decoration: none; }
+        .listing-url a:hover { text-decoration: underline; }
+
+        /* Job details panel - full width */
+        .details-grid { grid-column: 1 / -1; }
+
+        .job-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+        .job-card:last-child { margin-bottom: 0; }
+        .job-card-header {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .job-card-header h4 { margin: 0; font-size: 14px; color: #38bdf8; }
+        .job-card-url { font-size: 11px; color: var(--text-sub); }
+        .job-card-url a { color: #60a5fa; text-decoration: none; }
+        .job-card-body {
+            padding: 16px 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 12px;
+        }
+        .detail-field { font-size: 12px; }
+        .detail-label { color: var(--text-sub); font-weight: 600; margin-bottom: 4px; }
+        .detail-value { color: var(--text-main); word-break: break-word; }
+        .detail-value.long {
+            max-height: 80px;
+            overflow-y: auto;
+            color: #cbd5e1;
+        }
+        .detail-value.long::-webkit-scrollbar { width: 4px; }
+        .detail-value.long::-webkit-scrollbar-track { background: transparent; }
+        .detail-value.long::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+        .detail-field.full-width { grid-column: 1 / -1; }
+
+        .error-msg {
+            color: #f87171;
+            font-size: 13px;
+            padding: 12px 0;
+        }
+
+        .empty-state {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-sub);
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h2>🍎 Job Harvestor</h2>
+    <div class="nav-links">
+        <a href="/">Dashboard</a>
+        <a href="/test" class="active">LLM Tester</a>
+    </div>
+</div>
+
+<div class="hero">
+    <h1>🧪 LLM Extraction Tester</h1>
+    <p>Paste a job listings URL. The AI will extract CSS selectors, scrape up to 10 listings, and fetch full job details — all in one run.</p>
+</div>
+
+<div class="input-section">
+    <input type="url" id="testUrl" placeholder="https://jobs.example.com/search?location=us&page=1" />
+    <button class="btn btn-run" id="runBtn" onclick="runTest()">🚀 Run Test</button>
+</div>
+
+<div class="status-bar" id="statusBar" style="display:none;"></div>
+
+<div class="results-grid" id="resultsGrid" style="display:none;">
+
+    <div class="panel">
+        <div class="panel-header">
+            <h3>Extracted CSS Selectors</h3>
+            <span class="badge badge-purple" id="selectorBadge">AI</span>
+        </div>
+        <div class="panel-body" id="selectorsPanel">
+            <div class="empty-state">No selectors yet.</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h3>Discovered Listings</h3>
+            <span class="badge badge-green" id="listingsBadge">0</span>
+        </div>
+        <div class="panel-body" id="listingsPanel">
+            <div class="empty-state">No listings yet.</div>
+        </div>
+    </div>
+
+    <div class="panel details-grid">
+        <div class="panel-header">
+            <h3>Job Details</h3>
+            <span class="badge badge-blue" id="detailsBadge">0 scraped</span>
+        </div>
+        <div class="panel-body" id="detailsPanel">
+            <div class="empty-state">No job details yet.</div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    function setStatus(msg, type='') {
+        const bar = document.getElementById('statusBar');
+        bar.style.display = 'flex';
+        bar.className = 'status-bar ' + type;
+        bar.innerHTML = type === 'running'
+            ? `<div class="spinner"></div><span>${msg}</span>`
+            : `<span>${msg}</span>`;
+    }
+
+    function renderSelectors(selectors) {
+        const panel = document.getElementById('selectorsPanel');
+        const labels = {
+            job_list_selector: 'Job List Wrapper',
+            title_selector: 'Title (in wrapper)',
+            link_selector: 'Link (in wrapper)',
+            job_id_selector: 'Job ID',
+            job_title_selector: 'Job Title (detail)',
+            location_selector: 'Location',
+            department_selector: 'Department',
+            summary_selector: 'Summary',
+            long_description_selector: 'Description',
+            date_selector: 'Date Posted',
+        };
+        const entries = Object.entries(selectors);
+        if (!entries.length) { panel.innerHTML = '<div class="empty-state">No selectors returned.</div>'; return; }
+        panel.innerHTML = entries.map(([k, v]) => `
+            <div class="selector-row">
+                <span class="selector-key">${labels[k] || k}</span>
+                <span class="selector-val">${v || '—'}</span>
+            </div>
+        `).join('');
+    }
+
+    function renderListings(listings) {
+        const panel = document.getElementById('listingsPanel');
+        document.getElementById('listingsBadge').innerText = listings.length;
+        if (!listings.length) { panel.innerHTML = '<div class="empty-state">No listings found.</div>'; return; }
+        panel.innerHTML = listings.map((j, i) => `
+            <div class="listing-item">
+                <div class="listing-title">${i+1}. ${j.title || '(no title)'}</div>
+                <div class="listing-url"><a href="${j.href}" target="_blank">${j.href || '—'}</a></div>
+            </div>
+        `).join('');
+    }
+
+    function renderDetails(details) {
+        const panel = document.getElementById('detailsPanel');
+        document.getElementById('detailsBadge').innerText = `${details.length} scraped`;
+        if (!details.length) { panel.innerHTML = '<div class="empty-state">No job details returned.</div>'; return; }
+
+        panel.innerHTML = details.map(d => {
+            if (d.error) return `
+                <div class="job-card">
+                    <div class="job-card-header">
+                        <h4>${d.listing_title || d.url}</h4>
+                        <span style="color:#f87171; font-size:12px">Error</span>
+                    </div>
+                    <div class="job-card-body"><div class="error-msg">${d.error}</div></div>
+                </div>`;
+
+            return `
+            <div class="job-card">
+                <div class="job-card-header">
+                    <h4>${d.title || d.listing_title || '(no title)'}</h4>
+                    <div class="job-card-url"><a href="${d.url}" target="_blank">${d.url}</a></div>
+                </div>
+                <div class="job-card-body">
+                    ${field('Job ID', d.job_id)}
+                    ${field('Location', d.location)}
+                    ${field('Department', d.department)}
+                    ${field('Date', d.date)}
+                    ${fieldLong('Summary', d.summary)}
+                    ${fieldLong('Description', d.long_description)}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function field(label, val) {
+        return `<div class="detail-field">
+            <div class="detail-label">${label}</div>
+            <div class="detail-value">${val || '—'}</div>
+        </div>`;
+    }
+    function fieldLong(label, val) {
+        return `<div class="detail-field full-width">
+            <div class="detail-label">${label}</div>
+            <div class="detail-value long">${val || '—'}</div>
+        </div>`;
+    }
+
+    async function runTest() {
+        const url = document.getElementById('testUrl').value.trim();
+        if (!url) { alert('Please enter a URL.'); return; }
+
+        const btn = document.getElementById('runBtn');
+        btn.disabled = true;
+        btn.innerText = '⏳ Running...';
+
+        document.getElementById('resultsGrid').style.display = 'none';
+        setStatus('Running... This may take up to 5 minutes. Chrome is navigating and GPT-4o is analyzing the DOM.', 'running');
+
+        try {
+            const res = await fetch('/api/test-extract', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url}),
+                signal: AbortSignal.timeout(310000) // 5m10s browser-side timeout
+            });
+
+            const json = await res.json();
+
+            if (json.error) {
+                setStatus('Error: ' + json.error, 'error');
+            } else {
+                const data = json.data;
+                setStatus(`Done! Found ${data.listings.length} listings, scraped ${data.job_details.length} job detail pages.`, 'success');
+
+                document.getElementById('resultsGrid').style.display = 'grid';
+                renderSelectors(data.selectors || {});
+                renderListings(data.listings || []);
+                renderDetails(data.job_details || []);
+            }
+        } catch(e) {
+            setStatus('Request failed: ' + e.message, 'error');
+        }
+
+        btn.disabled = false;
+        btn.innerText = '🚀 Run Test';
+    }
+
+    document.getElementById('testUrl').addEventListener('keydown', e => {
+        if (e.key === 'Enter') runTest();
+    });
+</script>
+
+</body>
+</html>
